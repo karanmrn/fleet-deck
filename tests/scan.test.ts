@@ -109,6 +109,8 @@ describe("runScan integration", () => {
     writeFileSync(cfg, JSON.stringify({ billing: { anthropic: "subscription" } }));
     const report = await runScan({ home: HOME, dbPath, adapters: [claudeCodeAdapter], billingConfigPath: cfg });
     expect(report.repricedRows).toBeGreaterThan(0);
+    const steady = await runScan({ home: HOME, dbPath, adapters: [claudeCodeAdapter], billingConfigPath: cfg });
+    expect(steady.repricedRows).toBe(0);
 
     const again = new Ledger(dbPath);
     try {

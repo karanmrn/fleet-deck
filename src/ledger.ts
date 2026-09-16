@@ -128,12 +128,18 @@ export class Ledger {
   }
 
   /** Upgrade ledgers written by older versions: add new columns, rebuild
-   *  views (CREATE VIEW IF NOT EXISTS would keep stale definitions). */
+   *  views only when stale, so a plain open takes no schema write lock. */
   private migrate(): void {
     const cols = this.db.prepare("PRAGMA table_info(usage_events)").all() as Row[];
     if (!cols.some((c) => c.name === "list_price_equivalent_usd")) {
       this.db.exec("ALTER TABLE usage_events ADD COLUMN list_price_equivalent_usd REAL");
     }
+    const current = ["v_day_model", "v_day_source"].every((view) =>
+      (this.db.prepare(`PRAGMA table_info(${view})`).all() as Row[]).some(
+        (c) => c.name === "list_price_equivalent_usd",
+      ),
+    );
+    if (current) return;
     this.db.exec("DROP VIEW IF EXISTS v_day_model");
     this.db.exec("DROP VIEW IF EXISTS v_day_source");
     this.db.exec(VIEWS);
@@ -368,7 +374,8 @@ export class Ledger {
   /** Recompute price-table cost for every row of one (provider, model)
    *  group, per-row, from the current rates. Never touches rows whose cost
    *  the source reported. rates=null demotes rows the table no longer
-   *  prices back to unknown. Returns the number of rows updated. */
+   *  prices back to unknown. Rows already at the current price are skipped,
+   *  so the return value counts only rows whose cost actually changed. */
   repriceGroup(
     provider: string | null,
     model: string | null,
@@ -393,9 +400,14 @@ export class Ledger {
       ` + COALESCE(cache_write_tokens, 0) * ${rates.cacheWrite}` +
       ` + COALESCE(reasoning_tokens, 0) * ${rates.output}) / 1000000.0, 8)`
     );
-    const sql = subscription
-      ? `UPDATE usage_events SET cost_usd = NULL, list_price_equivalent_usd = ${usd}, cost_source = 'price_list' ${match} AND cost_source IN ('unknown', 'price_list')`
-      : `UPDATE usage_events SET cost_usd = ${usd}, list_price_equivalent_usd = NULL, cost_source = 'price_list' ${match} AND cost_source IN ('unknown', 'price_list')`;
+    const [priced, cleared] = subscription
+      ? ["list_price_equivalent_usd", "cost_usd"]
+      : ["cost_usd", "list_price_equivalent_usd"];
+    const sql =
+      `UPDATE usage_events SET ${priced} = ${usd}, ${cleared} = NULL, cost_source = 'price_list'
+       ${match} AND cost_source IN ('unknown', 'price_list')
+       AND (cost_source = 'unknown' OR ${cleared} IS NOT NULL
+            OR ${priced} IS NULL OR ABS(${priced} - ${usd}) > 1e-9)`;
     const r = this.db.prepare(sql).run(provider, model);
     return Number(r.changes);
   }

@@ -97,6 +97,10 @@ describe("ledger", () => {
       const entry = findPrice(table, "anthropic", "claude-fable-5-1")!;
       const changed = ledger.repriceGroup("anthropic", "claude-fable-5-1", ratesFor(entry), false);
       expect(changed).toBe(1);
+      expect(ledger.repriceGroup("anthropic", "claude-fable-5-1", ratesFor(entry), false)).toBe(0);
+      expect(ledger.repriceGroup("anthropic", "claude-fable-5-1", ratesFor(entry), true)).toBe(1);
+      expect(ledger.repriceGroup("anthropic", "claude-fable-5-1", ratesFor(entry), true)).toBe(0);
+      expect(ledger.repriceGroup("anthropic", "claude-fable-5-1", ratesFor(entry), false)).toBe(1);
 
       const gpt = findPrice(table, "openai", "gpt-6-astra")!;
       ledger.repriceGroup("openai", "gpt-6-astra", ratesFor(gpt), false);
@@ -123,6 +127,7 @@ describe("ledger", () => {
       ledger.insertEvents([makeEvent({ rawRef: "p1", costUsd: 99, costSource: "price_list" })]);
       const changed = ledger.repriceGroup("anthropic", "claude-fable-5-1", null, false);
       expect(changed).toBe(1);
+      expect(ledger.repriceGroup("anthropic", "claude-fable-5-1", null, false)).toBe(0);
       const row = ledger.byModel()[0];
       expect(row.cost_usd).toBeNull();
       expect(Number(row.unknown_cost_events)).toBe(1);
@@ -151,11 +156,22 @@ describe("ledger", () => {
       "sess-1", "fleet-deck", 10, 100, 5, "price_list", "uuid-1");
     raw.close();
     const again = new Ledger(path);
+    again.close();
+    const schemaVersion = () => {
+      const db = new DatabaseSync(path);
+      try {
+        return Number((db.prepare("PRAGMA schema_version").get() as { schema_version: number }).schema_version);
+      } finally { db.close(); }
+    };
+    const migrated = schemaVersion();
+    new Ledger(path).close();
+    expect(schemaVersion()).toBe(migrated);
+    const reopened = new Ledger(path);
     try {
-      const t = again.totals();
+      const t = reopened.totals();
       expect(t.events).toBe(1);
       expect(t.costUsd).toBeCloseTo(5, 6);
       expect(t.listPriceEquivalentUsd).toBeNull();
-    } finally { again.close(); }
+    } finally { reopened.close(); }
   });
 });
