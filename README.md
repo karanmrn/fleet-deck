@@ -84,9 +84,9 @@ Remove the entry (or the file) to go back to usage billing for that provider.
 `fleet-deck serve` (or just `fleet-deck`) serves a server-rendered page on `http://localhost:4173` (localhost only, nothing leaves the machine):
 
 - **Overview** — totals: tokens, cost, sessions, events, models, sources (+ a "List-price equivalent" card when a provider is billed by subscription)
-- **Models in use** — per-model tokens/cost/sessions, with `estimated` / `partial` / `cost?` flags
+- **Models in use** — per-model tokens/cost/sessions, with `estimated` / `partial` / `cost?` / `list-price` flags (a `list-price` row shows its list-price equivalent in the cost column)
 - **Tokens per day** — stacked uPlot chart by model
-- **Cost per day** — USD per day (unknown days are gaps, not zeros)
+- **Cost per day** — USD per day of usage-billed spend (unknown and subscription-only days are gaps, not zeros)
 - **Sessions per day**
 - **Provider quota windows** — live output of `quota-axi` if installed
 - **Electricity** — kWh estimate with an explicit ±5× order-of-magnitude band and method note
