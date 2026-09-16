@@ -51,20 +51,3 @@ export function estimateEnergyKwh(tokens: number, modelClass: ModelClass): Energ
     tokens,
   };
 }
-
-/** Total tokens on an event-like row, null-safe. */
-export function eventTokens(e: {
-  inputTokens?: number | null;
-  outputTokens?: number | null;
-  cacheReadTokens?: number | null;
-  cacheWriteTokens?: number | null;
-  reasoningTokens?: number | null;
-}): number {
-  return (
-    (e.inputTokens ?? 0) +
-    (e.outputTokens ?? 0) +
-    (e.cacheReadTokens ?? 0) +
-    (e.cacheWriteTokens ?? 0) +
-    (e.reasoningTokens ?? 0)
-  );
-}

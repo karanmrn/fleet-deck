@@ -29,6 +29,11 @@ describe("prices", () => {
     expect(findPrice(table, "anthropic", "claude-sonnet-4.8-20260101")?.output_per_mtok).toBe(15.0);
   });
 
+  it("never gives a shorter logged model the price of a longer prefix entry", () => {
+    expect(findPrice(table, "xai", "grok-4")).toBeNull();
+    expect(findPrice(table, "openai", "gpt-5.1-codex-max")?.model).toBe("gpt-5.1-codex");
+  });
+
   it("never crosses providers and never invents a match", () => {
     expect(findPrice(table, "openai", "claude-fable-5-1")).toBeNull();
     expect(findPrice(table, "anthropic", "no-such-model")).toBeNull();

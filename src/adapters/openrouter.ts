@@ -71,6 +71,8 @@ export const openrouterAdapter: Adapter = {
       if (!date || !model) continue;
       const provider = txt(row.provider_name);
       const usage = num(row.usage);
+      const completion = num(row.completion_tokens);
+      const reasoning = num(row.reasoning_tokens);
       events.push({
         ts: `${date}T00:00:00.000Z`,
         source: ID,
@@ -79,10 +81,10 @@ export const openrouterAdapter: Adapter = {
         sessionId: null,
         project: null,
         inputTokens: num(row.prompt_tokens),
-        outputTokens: num(row.completion_tokens),
+        outputTokens: completion !== null && reasoning !== null ? Math.max(0, completion - reasoning) : completion,
         cacheReadTokens: null,
         cacheWriteTokens: null,
-        reasoningTokens: num(row.reasoning_tokens),
+        reasoningTokens: reasoning,
         costUsd: usage,
         costSource: usage !== null ? "api" : "unknown",
         estimated: false,

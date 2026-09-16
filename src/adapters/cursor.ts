@@ -52,9 +52,7 @@ export const cursorAdapter: Adapter = {
       }
       const lastRowid = Number(ctx.getState(STATE_KEY) ?? "0") || 0;
       const rows = db
-        .prepare(
-          "SELECT rowid AS rid, * FROM ai_code_hashes WHERE rowid > ? ORDER BY rowid LIMIT 100000",
-        )
+        .prepare("SELECT rowid AS rid, * FROM ai_code_hashes WHERE rowid > ? ORDER BY rowid")
         .all(lastRowid) as Record<string, unknown>[];
       let maxRid = lastRowid;
       for (const row of rows) {

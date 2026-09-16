@@ -1,15 +1,10 @@
 // Small shared helpers: timestamp normalization, numeric coercion,
-// directory walking and offset-based JSONL reading.
+// and directory walking.
 
-import { open, stat } from "node:fs/promises";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { shouldSkipFile, shouldSkipLine } from "./redact.js";
-
-// Safety valves for pathological files.
-export const MAX_READ_BYTES = 256 * 1024 * 1024; // never read more than 256 MiB per scan pass
-export const MAX_LINES = 200000;
+import { shouldSkipFile } from "./redact.js";
 
 /** Normalize a timestamp to ISO 8601 UTC. Accepts ISO strings and epoch
  *  numbers (seconds or milliseconds). Returns null on failure. */
@@ -87,58 +82,4 @@ export function* walkFiles(
       }
     }
   }
-}
-
-export interface RawLine {
-  text: string;
-  /** Byte offset of the first byte of this line. */
-  start: number;
-  /** Byte offset one past the newline ending this line. */
-  end: number;
-}
-
-export interface JsonlRead {
-  lines: RawLine[];
-  /** Byte offset to store for the next incremental scan. */
-  nextOffset: number;
-  /** true when the file shrank and the scan restarted at 0. */
-  rotated: boolean;
-  skippedSensitive: number;
-}
-
-/** Read newline-terminated lines from `offset` to EOF (capped at
- *  MAX_READ_BYTES). A trailing partial line (no newline yet) is left
- *  unconsumed so the next scan re-reads it once complete. */
-export async function readLinesFromOffset(filePath: string, offset: number): Promise<JsonlRead> {
-  const st = await stat(filePath);
-  const rotated = offset > st.size;
-  const start = rotated ? 0 : offset;
-  const length = Math.min(st.size - start, MAX_READ_BYTES);
-  const fh = await open(filePath, "r");
-  let buf: Buffer;
-  try {
-    buf = Buffer.alloc(length);
-    await fh.read(buf, 0, length, start);
-  } finally {
-    await fh.close();
-  }
-  const lines: RawLine[] = [];
-  let pos = 0;
-  let skippedSensitive = 0;
-  while (lines.length < MAX_LINES) {
-    const nl = buf.indexOf(0x0a, pos);
-    if (nl === -1) break; // trailing partial line stays unconsumed
-    let text = buf.toString("utf8", pos, nl);
-    if (text.endsWith("\r")) text = text.slice(0, -1);
-    const lineStart = start + pos;
-    const lineEnd = start + nl + 1;
-    pos = nl + 1;
-    if (!text.trim()) continue;
-    if (shouldSkipLine(text)) {
-      skippedSensitive += 1;
-      continue;
-    }
-    lines.push({ text, start: lineStart, end: lineEnd });
-  }
-  return { lines, nextOffset: start + pos, rotated, skippedSensitive };
 }

@@ -3,6 +3,7 @@
 // page makes zero calls to the outside internet.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
@@ -169,6 +170,12 @@ export function startServer(opts: ServeOptions = {}): Promise<number> {
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       try {
+        const { port: boundPort } = server.address() as AddressInfo;
+        if (req.headers.host !== `localhost:${boundPort}` && req.headers.host !== `127.0.0.1:${boundPort}`) {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("forbidden host");
+          return;
+        }
         const url = new URL(req.url ?? "/", "http://localhost");
 
         if (url.pathname === "/") {
@@ -216,6 +223,6 @@ export function startServer(opts: ServeOptions = {}): Promise<number> {
 
   return new Promise((resolve, reject) => {
     server.on("error", reject);
-    server.listen(port, "127.0.0.1", () => resolve(port));
+    server.listen(port, "127.0.0.1", () => resolve((server.address() as AddressInfo).port));
   });
 }

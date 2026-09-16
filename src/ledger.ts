@@ -65,20 +65,6 @@ SELECT date(ts) AS day,
 FROM usage_events
 GROUP BY day, provider, model, source;
 
-CREATE VIEW IF NOT EXISTS v_day_provider AS
-SELECT date(ts) AS day,
-       COALESCE(provider, 'unknown') AS provider,
-       COUNT(*) AS events,
-       COUNT(DISTINCT session_id) AS sessions,
-       SUM(input_tokens) AS input_tokens,
-       SUM(output_tokens) AS output_tokens,
-       SUM(cache_read_tokens) AS cache_read_tokens,
-       SUM(cache_write_tokens) AS cache_write_tokens,
-       SUM(reasoning_tokens) AS reasoning_tokens,
-       SUM(cost_usd) AS cost_usd
-FROM usage_events
-GROUP BY day, provider;
-
 CREATE VIEW IF NOT EXISTS v_day_source AS
 SELECT date(ts) AS day,
        source,
@@ -333,17 +319,5 @@ export class Ledger {
          ORDER BY events DESC`,
       )
       .all() as Row[];
-  }
-
-  sessionsByDay(limitDays = 60): Row[] {
-    return this.db
-      .prepare(
-        `SELECT date(ts) AS day, COUNT(DISTINCT session_id) AS sessions
-         FROM usage_events
-         WHERE session_id IS NOT NULL AND day >= date('now', ?)
-         GROUP BY day
-         ORDER BY day ASC`,
-      )
-      .all(`-${limitDays} days`) as Row[];
   }
 }

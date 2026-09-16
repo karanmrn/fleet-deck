@@ -62,7 +62,7 @@ export function findPrice(
     const em = norm(e.model);
     if (!em) continue;
     const isPrefix = e.match === "prefix";
-    const modelHit = isPrefix ? m.startsWith(em) || em.startsWith(m) : m === em;
+    const modelHit = isPrefix ? m.startsWith(em) : m === em;
     if (!modelHit) continue;
     let score: number;
     if (ep === "*") score = 1;

@@ -8,7 +8,7 @@ import { basename, join } from "node:path";
 
 import type { Adapter, ScanOutcome, SourceStatus, UsageEvent } from "../types.js";
 import { num, toIso, txt } from "../util.js";
-import { projectFolderName } from "../redact.js";
+import { projectFolderName, shouldSkipFile } from "../redact.js";
 import { readJsonlFromOffset } from "./jsonl.js";
 
 const ID = "prime";
@@ -20,6 +20,7 @@ function listFiles(home: string): string[] {
     return readdirSync(base)
       .filter((f) => f.endsWith(".jsonl"))
       .map((f) => join(base, f))
+      .filter((f) => !shouldSkipFile(f))
       .sort();
   } catch {
     return [];

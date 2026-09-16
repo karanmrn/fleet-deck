@@ -1,14 +1,13 @@
 // Claude Code adapter: ~/.claude/projects/<project-slug>/*.jsonl
 // Assistant entries carry message.model and message.usage. Cache tokens
-// dominate - stored in their own columns, never folded into input.
-// No logged cost - the price table fills it.
+// dominate - stored in their own columns, never folded into input.// No logged cost - the price table fills it.
 
 import { existsSync, readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import type { Adapter, ScanOutcome, SourceStatus, UsageEvent } from "../types.js";
 import { num, toIso, txt } from "../util.js";
-import { projectFolderName } from "../redact.js";
+import { projectFolderName, shouldSkipFile } from "../redact.js";
 import { readJsonlFromOffset } from "./jsonl.js";
 
 const ID = "claude_code";
@@ -22,7 +21,8 @@ function listFiles(home: string): string[] {
     const dir = join(base, slug.name);
     try {
       for (const f of readdirSync(dir)) {
-        if (f.endsWith(".jsonl")) out.push(join(dir, f));
+        const file = join(dir, f);
+        if (f.endsWith(".jsonl") && !shouldSkipFile(file)) out.push(file);
       }
     } catch {
       continue;
@@ -80,6 +80,10 @@ export const claudeCodeAdapter: Adapter = {
         const ts = toIso(o.timestamp);
         if (!ts) continue;
         const details = (usage.output_tokens_details ?? {}) as Record<string, unknown>;
+        const output = num(usage.output_tokens);
+        const thinking = num(details.thinking_tokens);
+        const messageId = txt(msg?.id);
+        const requestId = txt(o.requestId);
         events.push({
           ts,
           source: ID,
@@ -88,15 +92,17 @@ export const claudeCodeAdapter: Adapter = {
           sessionId: txt(o.sessionId) ?? basename(file, ".jsonl"),
           project: projectFolderName(txt(o.cwd)) ?? (slug || null),
           inputTokens: num(usage.input_tokens),
-          outputTokens: num(usage.output_tokens),
+          outputTokens: output !== null && thinking !== null ? Math.max(0, output - thinking) : output,
           cacheReadTokens: num(usage.cache_read_input_tokens),
           cacheWriteTokens: num(usage.cache_creation_input_tokens),
-          reasoningTokens: num(details.thinking_tokens),
+          reasoningTokens: thinking,
           costUsd: null,
           costSource: "unknown",
           estimated: false,
           partial: false,
-          rawRef: txt(o.uuid) ?? `${basename(file)}:${line.start}`,
+          rawRef: messageId || requestId
+            ? `${messageId ?? ""}:${requestId ?? ""}`
+            : txt(o.uuid) ?? `${basename(file)}:${line.start}`,
           fileOffset: line.end,
         });
       }

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,10 +23,9 @@ afterEach(() => { while (tmpDirs.length) rmSync(tmpDirs.pop()!, { recursive: tru
 describe("claude_code", () => {
   it("reads assistant usage, skips sensitive lines", async () => {
     const out = await claudeCodeAdapter.scan(ctx());
-    expect(out.events.length).toBe(3);
-    const fable = out.events.find((e) => e.rawRef === "a1")!;
+    const fable = out.events.find((e) => e.rawRef === "msg_1:req_1")!;
     expect(fable.inputTokens).toBe(10);
-    expect(fable.outputTokens).toBe(100);
+    expect(fable.outputTokens).toBe(60);
     expect(fable.cacheReadTokens).toBe(5000);
     expect(fable.cacheWriteTokens).toBe(200);
     expect(fable.reasoningTokens).toBe(40);
@@ -35,6 +34,25 @@ describe("claude_code", () => {
     expect(fable.project).toBe("fleet-deck");
     // api_key line skipped unread
     expect(out.events.some((e) => e.rawRef === "aBAD")).toBe(false);
+  });
+
+  it("gives every content-block line of one API response the same rawRef", async () => {
+    const out = await claudeCodeAdapter.scan(ctx());
+    expect(out.events.map((e) => e.rawRef)).toEqual(["msg_1:req_1", "msg_1:req_1", "msg_2:req_2", "a3"]);
+  });
+
+  it("never opens files under a forbidden path", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "fleetdeck-cc-"));
+    tmpDirs.push(dir);
+    const project = join(dir, ".claude", "projects", "-Users-me-secret-santa");
+    mkdirSync(project, { recursive: true });
+    writeFileSync(
+      join(project, "s.jsonl"),
+      '{"type":"assistant","uuid":"x","timestamp":"2026-09-15T10:00:00.000Z","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":1}}}\n',
+    );
+    const out = await claudeCodeAdapter.scan({ home: dir, getOffset: () => 0, getState: () => null });
+    expect(out.filesScanned).toBe(0);
+    expect(out.events.length).toBe(0);
   });
 });
 
@@ -69,25 +87,91 @@ describe("gnhf", () => {
 });
 
 describe("codex", () => {
-  it("derives deltas from cumulative counters", async () => {
+  it("emits one delta per token_count line with disjoint token columns", async () => {
     const out = await codexAdapter.scan(ctx());
-    expect(out.events.length).toBe(1);
-    const e = out.events[0]!;
-    expect(e.inputTokens).toBe(3000);
-    expect(e.cacheReadTokens).toBe(300);
-    expect(e.outputTokens).toBe(150);
-    expect(e.reasoningTokens).toBe(30);
-    expect(e.estimated).toBe(true);
-    expect(e.model).toBe("gpt-5.1-codex");
-    expect(e.provider).toBe("openai");
+    expect(out.events.length).toBe(2);
+    const [first, second] = out.events;
+    expect(first!.ts).toBe("2026-09-15T12:05:00.000Z");
+    expect(first!.inputTokens).toBe(900);
+    expect(first!.cacheReadTokens).toBe(100);
+    expect(first!.outputTokens).toBe(40);
+    expect(first!.reasoningTokens).toBe(10);
+    expect(second!.ts).toBe("2026-09-16T09:10:00.000Z");
+    expect(second!.inputTokens).toBe(1800);
+    expect(second!.cacheReadTokens).toBe(200);
+    expect(second!.outputTokens).toBe(80);
+    expect(second!.reasoningTokens).toBe(20);
+    for (const e of out.events) {
+      expect(e.estimated).toBe(true);
+      expect(e.model).toBe("gpt-5.1-codex");
+      expect(e.provider).toBe("openai");
+    }
     expect(Object.keys(out.state ?? {})[0]).toMatch(/^codex:cum:/);
   });
 
-  it("emits nothing when cumulative state is stored", async () => {
+  it("emits nothing when offsets and cumulative state are stored", async () => {
     const first = await codexAdapter.scan(ctx());
-    const stateKey = Object.keys(first.state ?? {})[0]!;
-    const again = await codexAdapter.scan(ctx({ [stateKey]: first.state![stateKey]! }));
+    const again = await codexAdapter.scan({
+      home: HOME,
+      getOffset: (p: string) => first.offsets[p] ?? 0,
+      getState: (k: string) => first.state?.[k] ?? null,
+    });
     expect(again.events.length).toBe(0);
+  });
+
+  it("counts a counter that restarts from a lower value", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "fleetdeck-codex-"));
+    tmpDirs.push(dir);
+    const sessions = join(dir, ".codex", "sessions", "2026", "09", "15");
+    mkdirSync(sessions, { recursive: true });
+    const line = (ts: string, input: number, output: number) =>
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: ts,
+        payload: { type: "token_count", info: { total_token_usage: { input_tokens: input, output_tokens: output } } },
+      }) + "\n";
+    writeFileSync(
+      join(sessions, "rollout-reset.jsonl"),
+      line("2026-09-15T12:01:00.000Z", 5000, 50) + line("2026-09-15T12:02:00.000Z", 300, 3),
+    );
+    const out = await codexAdapter.scan({ home: dir, getOffset: () => 0, getState: () => null });
+    expect(out.events.map((e) => [e.inputTokens, e.outputTokens])).toEqual([[5000, 50], [300, 3]]);
+  });
+
+  it("keeps the model on a later scan that starts mid-turn", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "fleetdeck-codex-"));
+    tmpDirs.push(dir);
+    const sessions = join(dir, ".codex", "sessions", "2026", "09", "15");
+    mkdirSync(sessions, { recursive: true });
+    const file = join(sessions, "rollout-live.jsonl");
+    const tokenLine = (ts: string, input: number, output: number) =>
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: ts,
+        payload: { type: "token_count", info: { total_token_usage: { input_tokens: input, output_tokens: output } } },
+      }) + "\n";
+    writeFileSync(
+      file,
+      JSON.stringify({ type: "turn_context", timestamp: "2026-09-15T12:00:00.000Z", payload: { model: "gpt-5.1-codex" } }) +
+        "\n" +
+        tokenLine("2026-09-15T12:01:00.000Z", 100, 10),
+    );
+    const offsets: Record<string, number> = {};
+    const stored: Record<string, string> = {};
+    const scanCtx = {
+      home: dir,
+      getOffset: (p: string) => offsets[p] ?? 0,
+      getState: (k: string) => stored[k] ?? null,
+    };
+    const first = await codexAdapter.scan(scanCtx);
+    Object.assign(offsets, first.offsets);
+    Object.assign(stored, first.state);
+    appendFileSync(file, tokenLine("2026-09-15T12:02:00.000Z", 300, 30));
+    const second = await codexAdapter.scan(scanCtx);
+    expect(second.events.length).toBe(1);
+    expect(second.events[0]!.model).toBe("gpt-5.1-codex");
+    expect(second.events[0]!.inputTokens).toBe(200);
+    expect(second.events[0]!.outputTokens).toBe(20);
   });
 });
 
@@ -97,7 +181,7 @@ describe("no_mistakes", () => {
     tmpDirs.push(dir);
     const home = join(dir, "home");
     const nm = join(home, ".no-mistakes");
-    (await import("node:fs")).mkdirSync(nm, { recursive: true });
+    mkdirSync(nm, { recursive: true });
     const db = new DatabaseSync(join(nm, "state.sqlite"));
     db.exec(`CREATE TABLE agent_invocations (
       run_id TEXT, model_provider TEXT, model TEXT,
@@ -127,7 +211,7 @@ describe("cursor", () => {
     tmpDirs.push(dir);
     const home = join(dir, "home");
     const cur = join(home, ".cursor", "ai-tracking");
-    (await import("node:fs")).mkdirSync(cur, { recursive: true });
+    mkdirSync(cur, { recursive: true });
     const db = new DatabaseSync(join(cur, "ai-code-tracking.db"));
     db.exec(`CREATE TABLE ai_code_hashes (model TEXT, conversationId TEXT, timestamp TEXT)`);
     db.exec(`INSERT INTO ai_code_hashes VALUES ('gpt-4o','conv-1','2026-09-15T12:00:00'),('gpt-4o','conv-2','2026-09-15T13:00:00')`);

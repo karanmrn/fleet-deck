@@ -42,6 +42,7 @@ async function cmdScan(): Promise<void> {
   console.log("fleet-deck scan - read-only pass over local sources...\n");
   const report = await runScan({
     adapters: ADAPTERS,
+    dbPath: flagValue("--db") ?? undefined,
     logger: (m) => console.log(`  ${m}`),
   });
   console.log("");
@@ -96,7 +97,7 @@ async function cmdQuota(): Promise<void> {
 async function cmdServe(): Promise<void> {
   const port = Number(flagValue("--port") ?? 4173) || 4173;
   const { startServer } = await import("./server.js");
-  const actual = await startServer({ port });
+  const actual = await startServer({ port, dbPath: flagValue("--db") ?? undefined });
   console.log(`fleet-deck dashboard: http://localhost:${actual}`);
   console.log("press ctrl+c to stop");
   await new Promise(() => {});

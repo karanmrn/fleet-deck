@@ -26,15 +26,15 @@ describe("runScan integration", () => {
   it("scans the fixture home into a fresh ledger", async () => {
     const dbPath = tmpDb();
     const report = await runScan({ home: HOME, dbPath, adapters: ADAPTERS });
-    // 3 claude + 2 prime + 2 gnhf + 1 codex
-    expect(report.totalInserted).toBe(8);
+    // 3 claude (4 lines, one API response logged twice) + 2 prime + 2 gnhf + 2 codex
+    expect(report.totalInserted).toBe(9);
     expect(report.sources.every((s) => s.found)).toBe(true);
     expect(report.dbPath).toBe(dbPath);
 
     const ledger = new Ledger(dbPath);
     try {
       const t = ledger.totals();
-      expect(t.events).toBe(8);
+      expect(t.events).toBe(9);
       // prime reported cost + price-table cost on priced models
       expect(t.costUsd).not.toBeNull();
       expect(t.costUsd!).toBeGreaterThan(0);
