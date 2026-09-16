@@ -1,5 +1,14 @@
-import { describe, expect, it } from "vitest";
-import { applyCost, findPrice, loadPriceTable, priceCost } from "../src/prices.js";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+
+const tmpDirs: string[] = [];
+
+afterEach(() => { while (tmpDirs.length) rmSync(tmpDirs.pop()!, { recursive: true, force: true }); });
+import {
+  applyCost, findPrice, loadBillingConfig, loadPriceTable, priceCost, resolveBilling,
+} from "../src/prices.js";
 import type { UsageEvent } from "../src/types.js";
 
 const table = loadPriceTable("prices.json");
@@ -10,23 +19,61 @@ function ev(partial: Partial<UsageEvent> = {}): UsageEvent {
     model: "claude-fable-5-1", sessionId: "s", project: "p",
     inputTokens: null, outputTokens: null, cacheReadTokens: null,
     cacheWriteTokens: null, reasoningTokens: null,
-    costUsd: null, costSource: "unknown", estimated: false, partial: false,
+    costUsd: null, costSource: "unknown", listPriceEquivalentUsd: null,
+    estimated: false, partial: false,
     rawRef: "x:0", fileOffset: null, ...partial,
   };
 }
 
 describe("prices", () => {
   it("loads a versioned table with provenance", () => {
-    expect(table.version).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(table.version).toMatch(/^\d{4}-\d{2}-\d{2}(\.\d+)?$/);
     for (const e of table.entries) {
       expect(e.source_url).toMatch(/^https?:\/\//);
       expect(e.captured_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     }
   });
 
+  it("uses the exact ids the logs carry (dashed Anthropic ids)", () => {
+    for (const id of [
+      "claude-opus-5", "claude-sonnet-5", "claude-opus-4-8", "claude-fable-5-1",
+      "claude-haiku-4-5-20251001", "claude-sonnet-4-8",
+    ]) {
+      expect(findPrice(table, "anthropic", id)?.model).toBe(id);
+    }
+    expect(findPrice(table, "openai", "gpt-6-astra")?.model).toBe("gpt-6-astra");
+    expect(findPrice(table, "openai", "gpt-5.6-luna")?.model).toBe("gpt-5.6-luna");
+    expect(findPrice(table, "openai", "gpt-5.6-terra")?.model).toBe("gpt-5.6-terra");
+    expect(findPrice(table, "openrouter", "openai/gpt-5.6-luna")?.model).toBe("openai/gpt-5.6-luna");
+    expect(findPrice(table, "nebius", "moonshotai/Kimi-K3")?.model).toBe("moonshotai/Kimi-K3");
+    expect(findPrice(table, "nebius", "zai-org/GLM-5.3")?.model).toBe("zai-org/GLM-5.3");
+    expect(findPrice(table, "nebius", "deepseek-ai/DeepSeek-V4-Flash-0731")?.model)
+      .toBe("deepseek-ai/DeepSeek-V4-Flash-0731");
+  });
+
+  it("carries the verified Anthropic list prices", () => {
+    expect(findPrice(table, "anthropic", "claude-fable-5-1")).toMatchObject({
+      input_per_mtok: 10.0, output_per_mtok: 50.0,
+      cache_read_per_mtok: 0.25, cache_write_per_mtok: 12.5,
+    });
+    expect(findPrice(table, "anthropic", "claude-opus-4-8")).toMatchObject({
+      input_per_mtok: 5.0, output_per_mtok: 25.0,
+      cache_read_per_mtok: 0.5, cache_write_per_mtok: 6.25,
+    });
+    expect(findPrice(table, "anthropic", "claude-opus-5")).toMatchObject({
+      input_per_mtok: 5.0, output_per_mtok: 25.0,
+    });
+    expect(findPrice(table, "anthropic", "claude-sonnet-5")).toMatchObject({
+      input_per_mtok: 2.0, output_per_mtok: 10.0,
+    });
+    expect(findPrice(table, "anthropic", "claude-haiku-4-5-20251001")).toMatchObject({
+      input_per_mtok: 1.0, output_per_mtok: 5.0,
+    });
+  });
+
   it("matches exact and dated prefix variants", () => {
-    expect(findPrice(table, "anthropic", "claude-sonnet-4.8")?.input_per_mtok).toBe(3.0);
-    expect(findPrice(table, "anthropic", "claude-sonnet-4.8-20260101")?.output_per_mtok).toBe(15.0);
+    expect(findPrice(table, "anthropic", "claude-sonnet-4-8")?.input_per_mtok).toBe(3.0);
+    expect(findPrice(table, "anthropic", "claude-sonnet-4-8-20260101")?.output_per_mtok).toBe(15.0);
   });
 
   it("never gives a shorter logged model the price of a longer prefix entry", () => {
@@ -43,24 +90,64 @@ describe("prices", () => {
   it("computes cost with cache defaults", () => {
     const entry = findPrice(table, "anthropic", "claude-fable-5-1")!;
     const cost = priceCost(ev({ inputTokens: 1e6, outputTokens: 1e6, cacheReadTokens: 1e6 }), entry);
-    expect(cost).toBeCloseTo(15 + 75 + 1.5, 6);
+    expect(cost).toBeCloseTo(10 + 50 + 0.25, 6);
   });
 
   it("logged cost always wins", () => {
     const e = applyCost(ev({ costUsd: 1.23, costSource: "reported" }), table);
     expect(e.costUsd).toBe(1.23);
     expect(e.costSource).toBe("reported");
+    expect(e.listPriceEquivalentUsd).toBeNull();
   });
 
   it("prices a known model, marks price_list", () => {
     const e = applyCost(ev({ inputTokens: 1e6, outputTokens: 1e6 }), table);
-    expect(e.costUsd).toBeCloseTo(90, 6);
+    expect(e.costUsd).toBeCloseTo(60, 6);
     expect(e.costSource).toBe("price_list");
+    expect(e.listPriceEquivalentUsd).toBeNull();
   });
 
   it("unknown model stays unknown - never zero", () => {
     const e = applyCost(ev({ provider: "mystery", model: "no-such-model" }), table);
     expect(e.costUsd).toBeNull();
+    expect(e.listPriceEquivalentUsd).toBeNull();
     expect(e.costSource).toBe("unknown");
+  });
+});
+
+describe("billing", () => {
+  it("defaults every provider to usage in the shipped table", () => {
+    const resolved = resolveBilling(table, {});
+    for (const mode of Object.values(resolved)) expect(mode).toBe("usage");
+  });
+
+  it("prices subscription-billed providers as list-price equivalent", () => {
+    const billing = resolveBilling(table, { billing: { anthropic: "subscription" } });
+    const e = applyCost(ev({ inputTokens: 1e6, outputTokens: 1e6 }), table, billing);
+    expect(e.costUsd).toBeNull();
+    expect(e.costSource).toBe("price_list");
+    expect(e.listPriceEquivalentUsd).toBeCloseTo(60, 6);
+  });
+
+  it("keeps usage-billed cost out of the equivalent field", () => {
+    const billing = resolveBilling(table, { billing: { anthropic: "subscription" } });
+    const e = applyCost(
+      ev({ provider: "openai", model: "gpt-6-astra", inputTokens: 1e6, outputTokens: 1e6 }),
+      table,
+      billing,
+    );
+    expect(e.costUsd).toBeCloseTo(10 + 50, 6);
+    expect(e.listPriceEquivalentUsd).toBeNull();
+  });
+
+  it("reads overrides from a config file and fails loudly on garbage", () => {
+    const dir = mkdtempSync(join(tmpdir(), "fleetdeck-billing-"));
+    tmpDirs.push(dir);
+    const cfg = join(dir, "config.json");
+    writeFileSync(cfg, JSON.stringify({ billing: { anthropic: "subscription" } }));
+    expect(loadBillingConfig(cfg)).toEqual({ billing: { anthropic: "subscription" } });
+    expect(loadBillingConfig(join(dir, "missing.json"))).toEqual({});
+    writeFileSync(cfg, JSON.stringify({ billing: { anthropic: "subscripcion" } }));
+    expect(() => loadBillingConfig(cfg)).toThrow(/usage.*subscription|subscription.*usage/);
   });
 });

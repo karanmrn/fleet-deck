@@ -71,6 +71,7 @@ export const noMistakesAdapter: Adapter = {
           reasoningTokens: num(row.reasoning_tokens),
           costUsd: null,
           costSource: "unknown",
+          listPriceEquivalentUsd: null,
           estimated: false,
           partial: false,
           rawRef: `agent_invocations:${rid}`,

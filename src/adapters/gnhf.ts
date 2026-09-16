@@ -79,6 +79,7 @@ export const gnhfAdapter: Adapter = {
           reasoningTokens: null,
           costUsd: null,
           costSource: "unknown",
+          listPriceEquivalentUsd: null,
           estimated: o.estimated === true,
           partial: false,
           rawRef: `${basename(file)}:${line.start}`,

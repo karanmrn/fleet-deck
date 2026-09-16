@@ -56,11 +56,34 @@ fleet-deck scan
 
 This is the only adapter that makes network requests, and only when explicitly enabled.
 
+## Billing mode: usage vs subscription
+
+By default every provider in `prices.json` is billed per token (`usage`): the cost column is what you would pay at list price. If you pay a provider by **subscription** — for example an Anthropic plan that includes Claude usage — those tokens cost you nothing marginal, and showing list prices as "cost" would be misleading.
+
+fleet-deck never assumes a subscription. Declare it per provider in `~/.fleet-deck/config.json`:
+
+```json
+{
+  "billing": {
+    "anthropic": "subscription"
+  }
+}
+```
+
+Values are `"usage"` (default) or `"subscription"`. With a provider set to `subscription`:
+
+- price-table costs for that provider are computed the same way, but exported and shown as **`listPriceEquivalentUsd`** — "what these tokens would have cost at list price" — never as cost;
+- the dashboard shows them on a card labeled **"List-price equivalent"**, separate from the cost card;
+- totals keep the two apart: `costUsd` sums only usage-billed and provider-reported spend, `listPriceEquivalentUsd` sums the equivalents;
+- a `scan` re-prices existing ledger rows, so flipping a provider's mode or refreshing `prices.json` takes effect without rebuilding the ledger.
+
+Remove the entry (or the file) to go back to usage billing for that provider.
+
 ## Dashboard
 
 `fleet-deck serve` (or just `fleet-deck`) serves a server-rendered page on `http://localhost:4173` (localhost only, nothing leaves the machine):
 
-- **Overview** — totals: tokens, cost, sessions, events, models, sources
+- **Overview** — totals: tokens, cost, sessions, events, models, sources (+ a "List-price equivalent" card when a provider is billed by subscription)
 - **Models in use** — per-model tokens/cost/sessions, with `estimated` / `partial` / `cost?` flags
 - **Tokens per day** — stacked uPlot chart by model
 - **Cost per day** — USD per day (unknown days are gaps, not zeros)

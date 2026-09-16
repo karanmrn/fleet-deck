@@ -87,6 +87,7 @@ export const openrouterAdapter: Adapter = {
         reasoningTokens: reasoning,
         costUsd: usage,
         costSource: usage !== null ? "api" : "unknown",
+        listPriceEquivalentUsd: null,
         estimated: false,
         partial: false,
         rawRef: `openrouter:${date}:${model}:${provider ?? "unknown"}`,

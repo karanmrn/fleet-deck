@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,6 +38,7 @@ describe("runScan integration", () => {
       // prime reported cost + price-table cost on priced models
       expect(t.costUsd).not.toBeNull();
       expect(t.costUsd!).toBeGreaterThan(0);
+      expect(t.listPriceEquivalentUsd).toBeNull();
     } finally {
       ledger.close();
     }
@@ -59,8 +60,63 @@ describe("runScan integration", () => {
       const fable = rows.find((r) => r.model === "claude-fable-5-1");
       expect(fable).toBeTruthy();
       expect(Number(fable.cost_usd)).toBeGreaterThan(0);
+      const sonnet = rows.find((r) => r.model === "claude-sonnet-4-8");
+      expect(sonnet).toBeTruthy();
+      expect(Number(sonnet.cost_usd)).toBeGreaterThan(0);
     } finally {
       ledger.close();
+    }
+  });
+
+  it("prices subscription-billed providers as list-price equivalent, not cost", async () => {
+    const dbPath = tmpDb();
+    const dir = dirname(dbPath);
+    const cfg = join(dir, "config.json");
+    writeFileSync(cfg, JSON.stringify({ billing: { anthropic: "subscription" } }));
+    await runScan({ home: HOME, dbPath, adapters: ADAPTERS, billingConfigPath: cfg });
+    const ledger = new Ledger(dbPath);
+    try {
+      const rows = ledger.byModel();
+      const fable = rows.find((r) => r.model === "claude-fable-5-1")!;
+      expect(fable).toBeTruthy();
+      expect(Number(fable.list_price_equivalent_usd)).toBeGreaterThan(0);
+      // spend stays apart: anthropic rows carry no cost, prime rows still do
+      expect(fable.cost_usd).toBeNull();
+      const t = ledger.totals();
+      expect(t.listPriceEquivalentUsd).not.toBeNull();
+      expect(t.listPriceEquivalentUsd!).toBeGreaterThan(0);
+      expect(t.costUsd).not.toBeNull(); // prime reported cost only
+      expect(t.costUsd!).toBeLessThan(t.listPriceEquivalentUsd!);
+    } finally {
+      ledger.close();
+    }
+  });
+
+  it("re-prices ledger rows when the billing mode flips to subscription", async () => {
+    const dbPath = tmpDb();
+    await runScan({ home: HOME, dbPath, adapters: [claudeCodeAdapter] });
+    const ledger = new Ledger(dbPath);
+    let before: number | null = null;
+    try {
+      const fable = ledger.byModel().find((r) => r.model === "claude-fable-5-1")!;
+      before = fable.cost_usd === null ? null : Number(fable.cost_usd);
+    } finally {
+      ledger.close();
+    }
+    expect(before).not.toBeNull();
+
+    const cfg = join(dirname(dbPath), "config.json");
+    writeFileSync(cfg, JSON.stringify({ billing: { anthropic: "subscription" } }));
+    const report = await runScan({ home: HOME, dbPath, adapters: [claudeCodeAdapter], billingConfigPath: cfg });
+    expect(report.repricedRows).toBeGreaterThan(0);
+
+    const again = new Ledger(dbPath);
+    try {
+      const fable = again.byModel().find((r) => r.model === "claude-fable-5-1")!;
+      expect(fable.cost_usd).toBeNull();
+      expect(Number(fable.list_price_equivalent_usd)).toBeCloseTo(before!, 6);
+    } finally {
+      again.close();
     }
   });
 });

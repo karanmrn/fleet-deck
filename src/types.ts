@@ -4,6 +4,11 @@ export type CostSource = "reported" | "price_list" | "api" | "unknown";
 
 export type TrustLevel = "high" | "best-effort" | "optional";
 
+/** How a provider is paid on this machine. "usage" prices are real spend;
+ *  "subscription" prices are what the same tokens would cost at list price
+ *  (a list-price equivalent, not money leaving the account). */
+export type BillingMode = "usage" | "subscription";
+
 export interface UsageEvent {
   /** ISO 8601 timestamp of the usage event. */
   ts: string;
@@ -24,6 +29,9 @@ export interface UsageEvent {
   /** null means unknown - never silently zero. */
   costUsd: number | null;
   costSource: CostSource;
+  /** List-price equivalent in USD for subscription-billed providers.
+   *  null for usage-billed providers and unknown models. */
+  listPriceEquivalentUsd: number | null;
   /** true when the source itself flags numbers as estimates (e.g. gnhf). */
   estimated: boolean;
   /** true when the source only yields model/activity, no tokens (cursor). */

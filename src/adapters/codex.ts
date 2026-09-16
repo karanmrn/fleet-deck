@@ -136,6 +136,7 @@ export const codexAdapter: Adapter = {
           reasoningTokens: delta.reasoning,
           costUsd: null,
           costSource: "unknown",
+          listPriceEquivalentUsd: null,
           estimated: true,
           partial: false,
           rawRef: `${basename(file)}:${line.start}`,
