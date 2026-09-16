@@ -124,7 +124,7 @@ export async function runScan(opts: {
       repricedRows += ledger.repriceGroup(
         g.provider,
         g.model,
-        entry ? ratesFor(entry) : null,
+        entry === null ? null : entry.subscription_only ? "subscription_only" : ratesFor(entry),
         subscription,
         g.billing,
       );

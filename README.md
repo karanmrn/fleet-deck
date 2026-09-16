@@ -76,6 +76,7 @@ Values are `"usage"` (default) or `"subscription"`. The config entry wins over t
 - the dashboard shows them on a card labeled **"List-price equivalent"**, separate from the cost card;
 - totals keep the two apart: `costUsd` sums only usage-billed and provider-reported spend, `listPriceEquivalentUsd` sums the equivalents;
 - a `scan` re-prices existing ledger rows, so flipping a provider's mode or refreshing `prices.json` takes effect without rebuilding the ledger.
+- a model the vendor sells only inside a subscription, with no token price (for example `gpt-5.3-codex-spark`), has a `subscription_only` entry in `prices.json`: its rows carry no cost and no list-price equivalent, and show `subscription` instead of `unknown`.
 
 Remove the entry (or the file) to go back to the default for that provider.
 
@@ -84,7 +85,7 @@ Remove the entry (or the file) to go back to the default for that provider.
 `fleet-deck serve` (or just `fleet-deck`) serves a server-rendered page on `http://localhost:4173` (localhost only, nothing leaves the machine):
 
 - **Overview** — totals: tokens, cost, sessions, events, models, sources (+ a "List-price equivalent" card when a provider is billed by subscription)
-- **Models in use** — per-model tokens/cost/sessions, with `estimated` / `partial` / `cost?` / `list-price` flags (a `list-price` row shows its list-price equivalent in the cost column)
+- **Models in use** — per-model tokens/cost/sessions, with `estimated` / `partial` / `cost?` / `list-price` flags (a `list-price` row shows its list-price equivalent in the cost column; a subscription-only model shows `subscription`)
 - **Tokens per day** — stacked uPlot chart by model
 - **Cost per day** — USD per day of usage-billed spend (unknown and subscription-only days are gaps, not zeros)
 - **Sessions per day**

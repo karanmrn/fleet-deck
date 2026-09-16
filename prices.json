@@ -1,7 +1,7 @@
 {
-  "version": "2026-09-16.3",
+  "version": "2026-09-16.4",
   "captured_at": "2026-09-16",
-  "notes": "Prices in USD per 1M tokens. cache_read defaults to the input price and cache_write to the output price when null. Refresh by editing this file and bumping version. Model ids are the exact strings the local logs carry (dashed Anthropic ids, vendor-prefixed Nebius/OpenRouter ids). Rates with a long-context tier use the short-context tier. Billing mode is not part of this table: see README \"Billing mode\".",
+  "notes": "Prices in USD per 1M tokens. cache_read defaults to the input price and cache_write to the output price when null. Refresh by editing this file and bumping version. Model ids are the exact strings the local logs carry (dashed Anthropic ids, vendor-prefixed Nebius/OpenRouter ids). Rates with a long-context tier use the short-context tier. An entry with subscription_only true has null rates and a note: the vendor sells that model only inside a subscription and publishes no token price. Billing mode is not part of this table: see README \"Billing mode\".",
   "entries": [
     {
       "provider": "anthropic",
@@ -133,6 +133,19 @@
       "cache_read_per_mtok": 0.125,
       "cache_write_per_mtok": null,
       "source_url": "https://openai.com/pricing",
+      "captured_at": "2026-09-16"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.3-codex-spark",
+      "match": "exact",
+      "input_per_mtok": null,
+      "output_per_mtok": null,
+      "cache_read_per_mtok": null,
+      "cache_write_per_mtok": null,
+      "subscription_only": true,
+      "note": "Subscription-only, no list price: a ChatGPT Pro research preview with its own usage limit. OpenAI publishes no token price, and the ledger prices only from first-party sources.",
+      "source_url": "https://learn.chatgpt.com/docs/pricing",
       "captured_at": "2026-09-16"
     },
     {

@@ -1,6 +1,8 @@
 // Shared contracts for the fleet-deck ledger, adapters and exporters.
 
-export type CostSource = "reported" | "price_list" | "api" | "unknown";
+/** "subscription": the model has no token price because the vendor sells it
+ *  only inside a subscription (a subscription_only price entry). */
+export type CostSource = "reported" | "price_list" | "api" | "subscription" | "unknown";
 
 export type TrustLevel = "high" | "best-effort" | "optional";
 

@@ -1,5 +1,6 @@
 // Guard for the bundled fixtures: every model id the fixtures carry must
-// resolve to a price in prices.json or be listed below on purpose. When a
+// resolve to a price in prices.json, to a subscription_only entry (a model
+// with no list price), or be listed below on purpose. When a
 // new fixture brings a model the table does not price, this test fails
 // loudly instead of letting the cost silently become "unknown".
 
@@ -41,7 +42,16 @@ function key(provider: unknown, model: unknown): string {
 
 afterEach(() => { while (tmpDirs.length) rmSync(tmpDirs.pop()!, { recursive: true, force: true }); });
 
-async function fixtureModelIds(): Promise<Array<{ provider: string | null; model: string | null }>> {
+interface FixtureModel {
+  provider: string | null;
+  model: string | null;
+  cost_usd: unknown;
+  list_price_equivalent_usd: unknown;
+  unknown_cost_events: number;
+  subscription_only_events: number;
+}
+
+async function fixtureModelIds(): Promise<FixtureModel[]> {
   const dir = mkdtempSync(join(tmpdir(), "fleetdeck-coverage-"));
   tmpDirs.push(dir);
   const dbPath = join(dir, "ledger.db");
@@ -52,6 +62,10 @@ async function fixtureModelIds(): Promise<Array<{ provider: string | null; model
     return rows.map((r) => ({
       provider: typeof r.provider === "string" ? r.provider : null,
       model: typeof r.model === "string" ? r.model : null,
+      cost_usd: r.cost_usd,
+      list_price_equivalent_usd: r.list_price_equivalent_usd,
+      unknown_cost_events: Number(r.unknown_cost_events),
+      subscription_only_events: Number(r.subscription_only_events),
     }));
   } finally {
     ledger.close();
@@ -74,6 +88,22 @@ describe("price-table coverage of bundled fixtures", () => {
       `fixture model ids without a price in prices.json v${table.version} - ` +
         `add a verified entry or extend KNOWN_UNPRICED with a reason`,
     ).toEqual([]);
+  });
+
+  it("covers a subscription-only model by its marker, not by a price or the allowlist", async () => {
+    const seen = await fixtureModelIds();
+    const spark = seen.find((r) => r.provider === "openai" && r.model === "gpt-5.3-codex-spark");
+    expect(spark, "the Codex fixture carries gpt-5.3-codex-spark").toBeTruthy();
+    expect(KNOWN_UNPRICED.has(key(spark!.provider, spark!.model))).toBe(false);
+    const entry = findPrice(table, spark!.provider, spark!.model)!;
+    expect(entry.subscription_only).toBe(true);
+    expect(entry.note).toBeTruthy();
+    expect([entry.input_per_mtok, entry.output_per_mtok, entry.cache_read_per_mtok, entry.cache_write_per_mtok])
+      .toEqual([null, null, null, null]);
+    expect(spark!.cost_usd).toBeNull();
+    expect(spark!.list_price_equivalent_usd).toBeNull();
+    expect(spark!.unknown_cost_events).toBe(0);
+    expect(spark!.subscription_only_events).toBeGreaterThan(0);
   });
 
   it("the allowlist only contains ids the fixtures actually produce", async () => {

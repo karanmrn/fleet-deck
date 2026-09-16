@@ -89,8 +89,9 @@ describe("gnhf", () => {
 describe("codex", () => {
   it("emits one delta per token_count line with disjoint token columns", async () => {
     const out = await codexAdapter.scan(ctx());
-    expect(out.events.length).toBe(2);
-    const [first, second] = out.events;
+    const events = out.events.filter((e) => e.model === "gpt-5.1-codex");
+    expect(events.length).toBe(2);
+    const [first, second] = events;
     expect(first!.ts).toBe("2026-09-15T12:05:00.000Z");
     expect(first!.inputTokens).toBe(900);
     expect(first!.cacheReadTokens).toBe(100);
@@ -101,12 +102,12 @@ describe("codex", () => {
     expect(second!.cacheReadTokens).toBe(200);
     expect(second!.outputTokens).toBe(80);
     expect(second!.reasoningTokens).toBe(20);
-    for (const e of out.events) {
+    for (const e of events) {
       expect(e.estimated).toBe(true);
-      expect(e.model).toBe("gpt-5.1-codex");
       expect(e.provider).toBe("openai");
     }
-    expect(Object.keys(out.state ?? {})[0]).toMatch(/^codex:cum:/);
+    expect(out.events.length).toBe(3);
+    expect(Object.keys(out.state ?? {}).every((k) => k.startsWith("codex:cum:"))).toBe(true);
   });
 
   it("emits nothing when offsets and cumulative state are stored", async () => {

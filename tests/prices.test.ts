@@ -133,6 +133,30 @@ describe("prices", () => {
     expect(e.listPriceEquivalentUsd).toBeNull();
     expect(e.costSource).toBe("unknown");
   });
+
+  it("marks a subscription-only model as subscription, with no cost and no list-price equivalent", () => {
+    const e = applyCost(ev({ provider: "openai", model: "gpt-5.3-codex-spark", inputTokens: 1e6 }), table);
+    expect(e.costSource).toBe("subscription");
+    expect(e.costUsd).toBeNull();
+    expect(e.listPriceEquivalentUsd).toBeNull();
+  });
+
+  it("rejects a subscription_only entry that carries a rate or no note", () => {
+    const dir = mkdtempSync(join(tmpdir(), "fleetdeck-prices-"));
+    tmpDirs.push(dir);
+    const path = join(dir, "prices.json");
+    const entry = {
+      provider: "openai", model: "x", subscription_only: true, note: "no list price",
+      input_per_mtok: 1, output_per_mtok: null, cache_read_per_mtok: null, cache_write_per_mtok: null,
+      source_url: "https://example.com", captured_at: "2026-09-16",
+    };
+    writeFileSync(path, JSON.stringify({ version: "t", captured_at: "t", entries: [entry] }));
+    expect(() => loadPriceTable(path)).toThrow(/subscription_only/);
+    writeFileSync(path, JSON.stringify({
+      version: "t", captured_at: "t", entries: [{ ...entry, input_per_mtok: null, note: undefined }],
+    }));
+    expect(() => loadPriceTable(path)).toThrow(/subscription_only/);
+  });
 });
 
 describe("billing", () => {

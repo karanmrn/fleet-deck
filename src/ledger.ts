@@ -337,7 +337,9 @@ export class Ledger {
                 SUM(cost_usd) AS cost_usd,
                 SUM(list_price_equivalent_usd) AS list_price_equivalent_usd,
                 SUM(CASE WHEN cost_usd IS NULL AND list_price_equivalent_usd IS NULL
+                          AND cost_source <> 'subscription'
                          THEN 1 ELSE 0 END) AS unknown_cost_events,
+                SUM(CASE WHEN cost_source = 'subscription' THEN 1 ELSE 0 END) AS subscription_only_events,
                 MAX(estimated) AS any_estimated,
                 MAX(partial) AS any_partial
          FROM usage_events
@@ -381,7 +383,7 @@ export class Ledger {
       .prepare(
         `SELECT DISTINCT provider, model, billing
          FROM usage_events
-         WHERE cost_source IN ('unknown', 'price_list')`,
+         WHERE cost_source IN ('unknown', 'price_list', 'subscription')`,
       )
       .all() as Row[];
     return rows.map((r) => ({
@@ -394,22 +396,26 @@ export class Ledger {
   /** Recompute price-table cost for every row of one (provider, model,
    *  billing evidence) group, per-row, from the current rates. Never
    *  touches rows whose cost the source reported. rates=null demotes rows the table no longer
-   *  prices back to unknown. Rows already at the current price are skipped,
+   *  prices back to unknown; "subscription_only" marks rows of a model sold
+   *  only inside a subscription. Rows already at the current price are skipped,
    *  so the return value counts only rows whose cost actually changed. */
   repriceGroup(
     provider: string | null,
     model: string | null,
-    rates: { input: number; output: number; cacheRead: number; cacheWrite: number } | null,
+    rates: { input: number; output: number; cacheRead: number; cacheWrite: number } | "subscription_only" | null,
     subscription: boolean,
     billing: BillingMode | null = null,
   ): number {
     const match = "WHERE (provider IS ?) AND (model IS ?) AND (billing IS ?)";
-    if (rates === null) {
+    if (rates === null || rates === "subscription_only") {
+      const [target, from] = rates === null
+        ? ["unknown", "('price_list', 'subscription')"]
+        : ["subscription", "('unknown', 'price_list')"];
       const r = this.db
         .prepare(
           `UPDATE usage_events
-           SET cost_usd = NULL, list_price_equivalent_usd = NULL, cost_source = 'unknown'
-           ${match} AND cost_source = 'price_list'`,
+           SET cost_usd = NULL, list_price_equivalent_usd = NULL, cost_source = '${target}'
+           ${match} AND cost_source IN ${from}`,
         )
         .run(provider, model, billing);
       return Number(r.changes);
@@ -426,8 +432,8 @@ export class Ledger {
       : ["cost_usd", "list_price_equivalent_usd"];
     const sql =
       `UPDATE usage_events SET ${priced} = ${usd}, ${cleared} = NULL, cost_source = 'price_list'
-       ${match} AND cost_source IN ('unknown', 'price_list')
-       AND (cost_source = 'unknown' OR ${cleared} IS NOT NULL
+       ${match} AND cost_source IN ('unknown', 'price_list', 'subscription')
+       AND (cost_source <> 'price_list' OR ${cleared} IS NOT NULL
             OR ${priced} IS NULL OR ABS(${priced} - ${usd}) > 1e-9)`;
     const r = this.db.prepare(sql).run(provider, model, billing);
     return Number(r.changes);

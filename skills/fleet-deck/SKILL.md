@@ -27,7 +27,7 @@ Run from any directory. If `totals.events` is 0, run `npx fleet-deck scan` first
 
 - `generatedAt` - ISO 8601 time of the export.
 - `totals` - `events`, `sessions`, `models`, `providers`, `sources`, `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `reasoningTokens`, `totalTokens`, `costUsd`, `listPriceEquivalentUsd`, `estimatedEvents`, `partialEvents`. `costUsd` is the sum of known usage-billed and provider-reported costs only, or `null` when no event has a known cost. `listPriceEquivalentUsd` is the sum of list-price equivalents for subscription-billed usage (see rule 7), or `null` when there is none. The two are never mixed.
-- `models[]` - one row per provider and model: `provider`, `model`, `events`, `sessions`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`, `cost_usd`, `list_price_equivalent_usd`, `unknown_cost_events`, `any_estimated`, `any_partial`.
+- `models[]` - one row per provider and model: `provider`, `model`, `events`, `sessions`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`, `cost_usd`, `list_price_equivalent_usd`, `unknown_cost_events`, `subscription_only_events`, `any_estimated`, `any_partial`.
 - `days[]` - last 30 days: `day`, `events`, `sessions`, the five token columns, `cost_usd`, `list_price_equivalent_usd`.
 - `dayModel[]` - one row per day, provider, model and source: `day`, `provider`, `model`, `source`, `events`, `sessions`, the five token columns, `cost_usd`, `list_price_equivalent_usd`, `any_estimated`, `any_partial`.
 - `sources[]` - one row per source: `source`, `events`, `sessions`, `models`, the five token columns, `cost_usd`, `list_price_equivalent_usd`, `any_estimated`, `any_partial`, `first_ts`, `last_ts`.
@@ -37,7 +37,7 @@ The five token columns do not overlap. Total tokens = input + output + cache rea
 
 ## TOON payload shape
 
-Tables `totals`, `models`, `days`, `sources` and `energy` carry the same data in camelCase with a `totalTokens` column. In `models`, `flags` joins `estimated`, `partial`, `cost_unknown` and `list_price` with `+`, or is `-`. A cost of `unknown` is not zero. A `listPriceEquivalentUsd` of `-` means no subscription-billed usage, not zero. Only `totals` and `models` have a `listPriceEquivalentUsd` column. In `days` and `sources`, a subscription-billed row shows `costUsd` as `unknown`. Use the JSON export for list-price equivalents per day or per source.
+Tables `totals`, `models`, `days`, `sources` and `energy` carry the same data in camelCase with a `totalTokens` column. In `models`, `flags` joins `estimated`, `partial`, `cost_unknown`, `list_price` and `subscription_only` with `+`, or is `-`. A cost of `unknown` is not zero. A cost of `subscription` marks a model with no list price (see rule 8). A `listPriceEquivalentUsd` of `-` means no subscription-billed usage, not zero. Only `totals` and `models` have a `listPriceEquivalentUsd` column. In `days` and `sources`, a subscription-billed row shows `costUsd` as `unknown`. Use the JSON export for list-price equivalents per day or per source.
 
 ## Reading rules
 
@@ -48,6 +48,7 @@ Tables `totals`, `models`, `days`, `sources` and `energy` carry the same data in
 5. Always give electricity as a range: "between `low` and `high` kWh". Do not give `kwh` alone.
 6. The ledger holds only numbers, model and provider names, timestamps, project folder names and file offsets. It holds no message content. Do not ask for message content.
 7. `list_price_equivalent_usd` / `listPriceEquivalentUsd` marks usage billed by subscription: Codex CLI usage on a ChatGPT Pro or Plus plan, or a provider set to `subscription` in `~/.fleet-deck/config.json`. That value is what the same tokens would cost at list price - it is NOT money spent. Say "list-price equivalent", never "cost". A subscription row has `cost_usd` null and is not "unknown".
+8. `subscription_only_events` above 0 or the `subscription_only` flag marks a model that the vendor sells only inside a subscription, with no token price (for example `gpt-5.3-codex-spark`). Its `cost_usd` and `list_price_equivalent_usd` are both null. Say "subscription only, no list price". Do not say "unknown" or "zero".
 
 ## Common answers
 

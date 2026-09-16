@@ -116,6 +116,7 @@ const PAGE = [
 "      var costCell='unknown';",
 "      if(m.cost_usd!==null&&m.cost_usd!==undefined){costCell=money(m.cost_usd);}",
 "      else if(m.list_price_equivalent_usd!==null&&m.list_price_equivalent_usd!==undefined){costCell=money(m.list_price_equivalent_usd);flags.push('list-price');}",
+"      else if(m.subscription_only_events&&!m.unknown_cost_events){costCell='subscription';}",
 "      return '<tr><td>'+esc(m.model)+'</td><td>'+esc(m.provider)+'</td><td class=\"num\">'+fmt(tok(m))+'</td><td class=\"num\">'+costCell+'</td><td class=\"num\">'+m.sessions+'</td><td class=\"flag\">'+flags.join(' ')+'</td></tr>';",
 "    }).join('');",
 "    document.getElementById('models').innerHTML='<table><thead><tr><th>model</th><th>provider</th><th>tokens</th><th>cost</th><th>sessions</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';",

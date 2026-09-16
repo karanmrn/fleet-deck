@@ -7,6 +7,9 @@
 // or ~/.fleet-deck/config.json overrides the provider; the override wins.
 // Subscription price-table costs become listPriceEquivalentUsd (what the
 // tokens would cost at list price), never costUsd, so the two never mix.
+// A subscription_only entry marks a model the vendor sells only inside a
+// subscription with no token price: its rows get cost_source "subscription"
+// with no cost and no list-price equivalent, and are not "unknown".
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -22,6 +25,11 @@ export interface PriceEntry {
   output_per_mtok: number | null;
   cache_read_per_mtok: number | null;
   cache_write_per_mtok: number | null;
+  /** true when the vendor sells the model only inside a subscription and
+   *  publishes no token price. All four rates must then be null. */
+  subscription_only?: boolean;
+  /** Why the entry has no price. Required with subscription_only. */
+  note?: string;
   source_url: string;
   captured_at: string;
 }
@@ -63,6 +71,13 @@ export function loadPriceTable(path: string = defaultPriceTablePath()): PriceTab
   const parsed = JSON.parse(raw) as PriceTable;
   if (!parsed || !Array.isArray(parsed.entries)) {
     throw new Error("prices.json is missing an entries array");
+  }
+  for (const e of parsed.entries) {
+    if (!e.subscription_only) continue;
+    const rates = [e.input_per_mtok, e.output_per_mtok, e.cache_read_per_mtok, e.cache_write_per_mtok];
+    if (rates.some((r) => r !== null) || !e.note) {
+      throw new Error(`prices.json ${e.provider}/${e.model}: a subscription_only entry needs null rates and a note`);
+    }
   }
   return parsed;
 }
@@ -187,7 +202,8 @@ export function ratesFor(entry: PriceEntry): {
 /** Fill cost from the price table when the source did not report one.
  *  Logged cost always wins; unknown models stay unknown - never zero.
  *  For subscription-billed providers the price-table cost lands in
- *  listPriceEquivalentUsd and costUsd stays null. */
+ *  listPriceEquivalentUsd and costUsd stays null. A subscription_only
+ *  entry leaves both null with costSource "subscription". */
 export function applyCost(
   event: UsageEvent,
   table: PriceTable,
@@ -197,6 +213,12 @@ export function applyCost(
   const entry = findPrice(table, event.provider, event.model);
   if (!entry) {
     event.costSource = "unknown";
+    event.costUsd = null;
+    event.listPriceEquivalentUsd = null;
+    return event;
+  }
+  if (entry.subscription_only) {
+    event.costSource = "subscription";
     event.costUsd = null;
     event.listPriceEquivalentUsd = null;
     return event;

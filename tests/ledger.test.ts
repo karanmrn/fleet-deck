@@ -170,6 +170,26 @@ describe("ledger", () => {
     } finally { ledger.close(); }
   });
 
+  it("marks rows of a subscription-only model as subscription, not unknown", () => {
+    const { ledger } = freshLedger();
+    try {
+      ledger.insertEvents([
+        makeEvent({ rawRef: "k1", provider: "openai", model: "gpt-5.3-codex-spark", costUsd: null, costSource: "unknown" }),
+      ]);
+      expect(ledger.repriceGroup("openai", "gpt-5.3-codex-spark", "subscription_only", false)).toBe(1);
+      expect(ledger.repriceGroup("openai", "gpt-5.3-codex-spark", "subscription_only", false)).toBe(0);
+      const row = ledger.byModel()[0];
+      expect(row.cost_usd).toBeNull();
+      expect(row.list_price_equivalent_usd).toBeNull();
+      expect(Number(row.unknown_cost_events)).toBe(0);
+      expect(Number(row.subscription_only_events)).toBe(1);
+      // a later table that prices the model re-prices the rows
+      const gpt = findPrice(table, "openai", "gpt-6-astra")!;
+      expect(ledger.repriceGroup("openai", "gpt-5.3-codex-spark", ratesFor(gpt), false)).toBe(1);
+      expect(ledger.byModel()[0].cost_usd).not.toBeNull();
+    } finally { ledger.close(); }
+  });
+
   it("migrates a v1 ledger by adding the equivalent column", () => {
     const dir = mkdtempSync(join(tmpdir(), "fleetdeck-mig-"));
     tmpDirs.push(dir);

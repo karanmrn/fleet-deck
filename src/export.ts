@@ -119,13 +119,17 @@ export function exportToon(ledger: Ledger): string {
         if (m.cost_usd === null && m.list_price_equivalent_usd !== null && m.list_price_equivalent_usd !== undefined) {
           flags.push("list_price");
         }
+        // a model sold only inside a subscription has no price, which is not unknown
+        const subscriptionOnly = m.cost_usd === null && (m.list_price_equivalent_usd ?? null) === null &&
+          num(m.unknown_cost_events) === 0 && num(m.subscription_only_events) > 0;
+        if (subscriptionOnly) flags.push("subscription_only");
         return [
           m.provider ?? "unknown",
           m.model ?? "unknown",
           num(m.events),
           num(m.sessions),
           rowTokens(m),
-          money2(m.cost_usd),
+          subscriptionOnly ? "subscription" : money2(m.cost_usd),
           listEquiv(m.list_price_equivalent_usd),
           flags.join("+") || "-",
         ];
