@@ -1,0 +1,5 @@
+{"type":"session","id":"prime-sess-1","timestamp":"2026-09-15T09:00:00.000Z","cwd":"/Users/test/some-project","version":"1"}
+{"type":"model_change","provider":"openrouter","modelId":"moonshotai/kimi-k2.6","timestamp":"2026-09-15T09:00:10.000Z"}
+{"type":"message","id":"m1","timestamp":"2026-09-15T09:01:00.000Z","message":{"role":"assistant","provider":"openrouter","model":"moonshotai/kimi-k2.6","usage":{"input":1000,"output":200,"cacheRead":500,"cacheWrite":0,"totalTokens":1700,"cost":{"input":0.0005,"output":0.001,"cacheRead":0.0001,"cacheWrite":0,"total":0.0016}}}}
+{"type":"message","id":"m2","timestamp":"2026-09-15T09:02:00.000Z","message":{"role":"user","content":"test"}}
+{"type":"message","id":"m3","timestamp":"2026-09-15T09:03:00.000Z","message":{"role":"assistant","provider":"openrouter","model":"moonshotai/kimi-k2.6","usage":{"input":10,"output":5,"cacheRead":0,"cacheWrite":0,"totalTokens":15,"cost":{"total":0.00002}}}}

@@ -1,0 +1,6 @@
+{"type":"user","uuid":"u1","sessionId":"sess-1","timestamp":"2026-09-15T10:00:00.000Z","cwd":"/Users/test/fleet-deck","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}
+{"type":"assistant","uuid":"a1","sessionId":"sess-1","timestamp":"2026-09-15T10:00:05.000Z","cwd":"/Users/test/fleet-deck","message":{"role":"assistant","model":"claude-fable-5-1","usage":{"input_tokens":10,"output_tokens":100,"cache_read_input_tokens":5000,"cache_creation_input_tokens":200,"output_tokens_details":{"thinking_tokens":40}}}}
+{"type":"assistant","uuid":"a2","sessionId":"sess-1","timestamp":"2026-09-15T10:01:00.000Z","cwd":"/Users/test/fleet-deck","message":{"role":"assistant","model":"claude-fable-5-1","usage":{"input_tokens":5,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+{"api_key":"sk-test-should-be-skipped","type":"assistant","uuid":"aBAD","sessionId":"sess-1","timestamp":"2026-09-15T10:01:30.000Z","message":{"role":"assistant","model":"claude-fable-5-1","usage":{"input_tokens":999,"output_tokens":999}}}
+{not valid json at all}
+{"type":"assistant","uuid":"a3","sessionId":"sess-1","timestamp":"2026-09-15T10:02:00.000Z","cwd":"/Users/test/fleet-deck","message":{"role":"assistant","model":"claude-sonnet-4.8","usage":{"input_tokens":20,"output_tokens":10}}}

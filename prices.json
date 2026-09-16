@@ -1,0 +1,117 @@
+{
+  "version": "2026-09-16",
+  "captured_at": "2026-09-16",
+  "notes": "Prices in USD per 1M tokens. cache_write/cache_read default to input price when null. Refresh by editing this file and bumping version.",
+  "entries": [
+    {
+      "provider": "anthropic",
+      "model": "claude-fable-5-1",
+      "match": "prefix",
+      "input_per_mtok": 15.0,
+      "output_per_mtok": 75.0,
+      "cache_read_per_mtok": 1.5,
+      "cache_write_per_mtok": 18.75,
+      "source_url": "https://www.anthropic.com/pricing",
+      "captured_at": "2026-09-16"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-4.8",
+      "match": "prefix",
+      "input_per_mtok": 15.0,
+      "output_per_mtok": 75.0,
+      "cache_read_per_mtok": 1.5,
+      "cache_write_per_mtok": 18.75,
+      "source_url": "https://www.anthropic.com/pricing",
+      "captured_at": "2026-09-16"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4.8",
+      "match": "prefix",
+      "input_per_mtok": 3.0,
+      "output_per_mtok": 15.0,
+      "cache_read_per_mtok": 0.3,
+      "cache_write_per_mtok": 3.75,
+      "source_url": "https://www.anthropic.com/pricing",
+      "captured_at": "2026-09-16"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-haiku-4.5",
+      "match": "prefix",
+      "input_per_mtok": 1.0,
+      "output_per_mtok": 5.0,
+      "cache_read_per_mtok": 0.1,
+      "cache_write_per_mtok": 1.25,
+      "source_url": "https://www.anthropic.com/pricing",
+      "captured_at": "2026-09-16"
+    },
+    {
+      "provider": "openrouter",
+      "model": "moonshotai/kimi-k2.6",
+      "match": "prefix",
+      "input_per_mtok": 0.45,
+      "output_per_mtok": 2.2,
+      "cache_read_per_mtok": 0.045,
+      "cache_write_per_mtok": null,
+      "source_url": "https://openrouter.ai/moonshotai/kimi-k2.6",
+      "captured_at": "2026-09-16"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.1-codex",
+      "match": "prefix",
+      "input_per_mtok": 1.25,
+      "output_per_mtok": 10.0,
+      "cache_read_per_mtok": 0.125,
+      "cache_write_per_mtok": null,
+      "source_url": "https://openai.com/pricing",
+      "captured_at": "2026-09-16"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.1",
+      "match": "prefix",
+      "input_per_mtok": 1.25,
+      "output_per_mtok": 10.0,
+      "cache_read_per_mtok": 0.125,
+      "cache_write_per_mtok": null,
+      "source_url": "https://openai.com/pricing",
+      "captured_at": "2026-09-16"
+    },
+    {
+      "provider": "xai",
+      "model": "grok-4.1",
+      "match": "prefix",
+      "input_per_mtok": 3.0,
+      "output_per_mtok": 15.0,
+      "cache_read_per_mtok": 0.75,
+      "cache_write_per_mtok": null,
+      "source_url": "https://x.ai/api",
+      "captured_at": "2026-09-16"
+    },
+    {
+      "provider": "nebius",
+      "model": "meta-llama/Llama-3.3-70B-Instruct",
+      "match": "exact",
+      "input_per_mtok": 0.13,
+      "output_per_mtok": 0.4,
+      "cache_read_per_mtok": null,
+      "cache_write_per_mtok": null,
+      "source_url": "https://nebius.com/prices-ai-cloud",
+      "captured_at": "2026-09-16"
+    },
+    {
+      "provider": "nebius",
+      "model": "Qwen/Qwen3-235B-A22B",
+      "match": "prefix",
+      "input_per_mtok": 0.2,
+      "output_per_mtok": 0.6,
+      "cache_read_per_mtok": null,
+      "cache_write_per_mtok": null,
+      "source_url": "https://nebius.com/prices-ai-cloud",
+      "captured_at": "2026-09-16"
+    }
+  ]
+}

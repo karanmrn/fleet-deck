@@ -4,6 +4,7 @@
   "description": "Local ledger and dashboard of every AI agent, model, token and cost on your machine.",
   "type": "module",
   "license": "MIT",
+  "author": "Karan Manoharan",
   "bin": {
     "fleet-deck": "./dist/cli.js"
   },
@@ -27,6 +28,20 @@
     "test": "vitest run --passWithNoTests",
     "lint": "eslint .",
     "prepack": "npm run build"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "tokens",
+    "usage",
+    "cost",
+    "dashboard",
+    "cli",
+    "llm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/karanmrn/fleet-deck.git"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
