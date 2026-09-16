@@ -103,6 +103,7 @@ export const claudeCodeAdapter: Adapter = {
           costUsd: null,
           costSource: "unknown",
           listPriceEquivalentUsd: null,
+          billing: null,
           estimated: false,
           partial: false,
           rawRef: messageId || requestId

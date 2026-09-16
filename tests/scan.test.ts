@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,15 +26,15 @@ describe("runScan integration", () => {
   it("scans the fixture home into a fresh ledger", async () => {
     const dbPath = tmpDb();
     const report = await runScan({ home: HOME, dbPath, adapters: ADAPTERS });
-    // 3 claude (4 lines, one API response logged twice) + 2 prime + 2 gnhf + 2 codex
-    expect(report.totalInserted).toBe(9);
+    // 4 claude (5 lines, one API response logged twice) + 2 prime + 2 gnhf + 2 codex
+    expect(report.totalInserted).toBe(10);
     expect(report.sources.every((s) => s.found)).toBe(true);
     expect(report.dbPath).toBe(dbPath);
 
     const ledger = new Ledger(dbPath);
     try {
       const t = ledger.totals();
-      expect(t.events).toBe(9);
+      expect(t.events).toBe(10);
       // prime reported cost + price-table cost on priced models
       expect(t.costUsd).not.toBeNull();
       expect(t.costUsd!).toBeGreaterThan(0);
@@ -90,6 +90,39 @@ describe("runScan integration", () => {
     } finally {
       ledger.close();
     }
+  });
+
+  it("prices Codex usage on a ChatGPT Pro plan as list-price equivalent without any config", async () => {
+    const dbPath = tmpDb();
+    const home = dirname(dbPath);
+    const sessions = join(home, ".codex", "sessions", "2026", "09", "15");
+    mkdirSync(sessions, { recursive: true });
+    const line = (o: unknown) => JSON.stringify(o) + "\n";
+    writeFileSync(
+      join(sessions, "rollout-pro.jsonl"),
+      line({ type: "turn_context", timestamp: "2026-09-15T12:00:00.000Z", payload: { model: "gpt-6-astra" } }) +
+        line({
+          type: "event_msg",
+          timestamp: "2026-09-15T12:01:00.000Z",
+          payload: {
+            type: "token_count",
+            info: { total_token_usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 } },
+            rate_limits: { limit_id: "codex", plan_type: "pro" },
+          },
+        }),
+    );
+    await runScan({ home, dbPath, adapters: [codexAdapter] });
+    const ledger = new Ledger(dbPath);
+    try {
+      const astra = ledger.byModel().find((r) => r.model === "gpt-6-astra")!;
+      expect(astra.cost_usd).toBeNull();
+      expect(Number(astra.list_price_equivalent_usd)).toBeCloseTo(10 + 50, 6);
+      expect(ledger.totals().costUsd).toBeNull();
+    } finally {
+      ledger.close();
+    }
+    const steady = await runScan({ home, dbPath, adapters: [codexAdapter] });
+    expect(steady.repricedRows).toBe(0);
   });
 
   it("re-prices ledger rows when the billing mode flips to subscription", async () => {

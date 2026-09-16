@@ -2,11 +2,11 @@
 // Cost preference: reported cost from the source log, then OpenRouter API
 // rows, then this price table. Unknown models stay unknown - never zero.
 //
-// Billing modes: the table carries a per-provider default ("usage" - list
-// prices are pay-per-token spend). A machine can override a provider to
-// "subscription" in ~/.fleet-deck/config.json; price-table costs for that
-// provider then become listPriceEquivalentUsd (what the tokens would cost
-// at list price), never costUsd, so spend and equivalents never mix.
+// Billing modes: every provider is "usage" (list prices are pay-per-token
+// spend) unless the source log proves a subscription (UsageEvent.billing)
+// or ~/.fleet-deck/config.json overrides the provider; the override wins.
+// Subscription price-table costs become listPriceEquivalentUsd (what the
+// tokens would cost at list price), never costUsd, so the two never mix.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -29,8 +29,6 @@ export interface PriceEntry {
 export interface PriceTable {
   version: string;
   captured_at: string;
-  /** Per-provider default billing mode. Absent provider -> "usage". */
-  billing?: Record<string, string>;
   entries: PriceEntry[];
 }
 
@@ -66,9 +64,6 @@ export function loadPriceTable(path: string = defaultPriceTablePath()): PriceTab
   if (!parsed || !Array.isArray(parsed.entries)) {
     throw new Error("prices.json is missing an entries array");
   }
-  for (const [p, m] of Object.entries(parsed.billing ?? {})) {
-    billingMode(m, `prices.json billing["${p}"]`);
-  }
   return parsed;
 }
 
@@ -101,20 +96,28 @@ export function loadBillingConfig(path: string): BillingConfig {
   return parsed;
 }
 
-/** Table defaults overlaid with machine config overrides. */
-export function resolveBilling(table: PriceTable, config: BillingConfig): Record<string, BillingMode> {
+/** Machine config overrides keyed by normalised provider id. */
+export function resolveBilling(config: BillingConfig): Record<string, BillingMode> {
   const out: Record<string, BillingMode> = {};
-  for (const [p, m] of Object.entries(table.billing ?? {})) {
-    out[norm(p)] = billingMode(m, `prices.json billing["${p}"]`);
-  }
   for (const [p, m] of Object.entries(config.billing ?? {})) {
     out[norm(p)] = billingMode(m, `config billing["${p}"]`);
   }
   return out;
 }
 
+/** Effective billing mode for one provider: machine override, then the
+ *  evidence the log carries, then "usage". */
+export function billingFor(
+  overrides: Record<string, BillingMode>,
+  provider: string | null,
+  evidence: BillingMode | null,
+): BillingMode {
+  return overrides[norm(provider)] ?? evidence ?? "usage";
+}
+
 /** Best match: exact provider+model, then provider-agnostic ("*") exact,
- *  then longest prefix match. */
+ *  then longest prefix match. A log without a provider matches by model id
+ *  alone, but only when a single provider prices that id. */
 export function findPrice(
   table: PriceTable,
   provider: string | null,
@@ -125,6 +128,7 @@ export function findPrice(
   if (!m) return null;
   let best: PriceEntry | null = null;
   let bestScore = -1;
+  const providers = new Set<string>();
   for (const e of table.entries) {
     const ep = norm(e.provider);
     const em = norm(e.model);
@@ -134,14 +138,16 @@ export function findPrice(
     if (!modelHit) continue;
     let score: number;
     if (ep === "*") score = 1;
-    else if (p && ep === p) score = 2;
+    else if (!p || ep === p) score = 2;
     else continue;
+    if (ep !== "*") providers.add(ep);
     if (isPrefix) score -= 0.5;
     if (score > bestScore || (score === bestScore && best !== null && em.length > norm(best.model).length)) {
       best = e;
       bestScore = score;
     }
   }
+  if (!p && providers.size > 1) return null;
   return best;
 }
 
@@ -196,7 +202,7 @@ export function applyCost(
     return event;
   }
   const cost = priceCost(event, entry);
-  const mode = billing[norm(event.provider)] ?? "usage";
+  const mode = billingFor(billing, event.provider, event.billing);
   event.costSource = "price_list";
   if (mode === "subscription") {
     event.listPriceEquivalentUsd = cost;

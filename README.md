@@ -60,7 +60,7 @@ This is the only adapter that makes network requests, and only when explicitly e
 
 By default every provider in `prices.json` is billed per token (`usage`): the cost column is what you would pay at list price. If you pay a provider by **subscription** — for example an Anthropic plan that includes Claude usage — those tokens cost you nothing marginal, and showing list prices as "cost" would be misleading.
 
-fleet-deck never assumes a subscription. Declare it per provider in `~/.fleet-deck/config.json`:
+fleet-deck assumes a subscription only when the log proves it: Codex CLI usage whose rollout reports a ChatGPT `pro` or `plus` plan is subscription usage. For any other provider, declare it in `~/.fleet-deck/config.json`:
 
 ```json
 {
@@ -70,14 +70,14 @@ fleet-deck never assumes a subscription. Declare it per provider in `~/.fleet-de
 }
 ```
 
-Values are `"usage"` (default) or `"subscription"`. With a provider set to `subscription`:
+Values are `"usage"` (default) or `"subscription"`. The config entry wins over the plan in the log, so `"openai": "usage"` keeps Codex usage as cost. For subscription usage:
 
-- price-table costs for that provider are computed the same way, but exported and shown as **`listPriceEquivalentUsd`** — "what these tokens would have cost at list price" — never as cost;
+- price-table costs are computed the same way, but exported and shown as **`listPriceEquivalentUsd`** — "what these tokens would have cost at list price" — never as cost;
 - the dashboard shows them on a card labeled **"List-price equivalent"**, separate from the cost card;
 - totals keep the two apart: `costUsd` sums only usage-billed and provider-reported spend, `listPriceEquivalentUsd` sums the equivalents;
 - a `scan` re-prices existing ledger rows, so flipping a provider's mode or refreshing `prices.json` takes effect without rebuilding the ledger.
 
-Remove the entry (or the file) to go back to usage billing for that provider.
+Remove the entry (or the file) to go back to the default for that provider.
 
 ## Dashboard
 
@@ -100,7 +100,7 @@ fleet-deck export --json   # machine-readable JSON
 fleet-deck export --toon   # compact TOON, same shape quota-axi emits
 ```
 
-Agents: see [SKILL.md](SKILL.md) for how to read the payload and its rules (unknown ≠ zero, estimated/partial flags, electricity as a range).
+Agents: see [skills/fleet-deck/SKILL.md](skills/fleet-deck/SKILL.md) for how to read the payload and its rules (unknown ≠ zero, estimated/partial flags, electricity as a range).
 
 ## Privacy
 
@@ -115,7 +115,7 @@ Agents: see [SKILL.md](SKILL.md) for how to read the payload and its rules (unkn
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Agent-facing docs: [SKILL.md](SKILL.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Agent-facing docs: [skills/fleet-deck/SKILL.md](skills/fleet-deck/SKILL.md).
 
 ## License
 

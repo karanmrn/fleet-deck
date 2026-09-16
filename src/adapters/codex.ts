@@ -5,11 +5,13 @@
 // cumulative bookkeeping. A counter that goes down starts a new count.
 // Cached tokens are part of input_tokens and
 // reasoning tokens are part of output_tokens; both are split out.
+// `token_count` lines also carry `rate_limits.plan_type`: a ChatGPT Pro or
+// Plus plan is billing evidence, so those events are subscription usage.
 
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 
-import type { Adapter, ScanOutcome, SourceStatus, UsageEvent } from "../types.js";
+import type { Adapter, BillingMode, ScanOutcome, SourceStatus, UsageEvent } from "../types.js";
 import { num, toIso, txt, walkFiles } from "../util.js";
 import { readJsonlFromOffset } from "./jsonl.js";
 
@@ -25,6 +27,13 @@ interface Cum {
 
 interface CodexState extends Cum {
   model: string | null;
+  plan?: string | null;
+}
+
+const SUBSCRIPTION_PLANS = new Set(["pro", "plus"]);
+
+function planBilling(plan: string | null): BillingMode | null {
+  return plan !== null && SUBSCRIPTION_PLANS.has(plan.toLowerCase()) ? "subscription" : null;
 }
 
 const ZERO: Cum = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0 };
@@ -93,6 +102,7 @@ export const codexAdapter: Adapter = {
       const saved = JSON.parse(ctx.getState(stateKey) ?? "null") as Partial<CodexState> | null;
       let prev: Cum = { ...ZERO, ...saved };
       let model: string | null = saved?.model ?? null;
+      let plan: string | null = saved?.plan ?? null;
       let sawUsage = false;
 
       for (const line of scan.lines) {
@@ -105,6 +115,9 @@ export const codexAdapter: Adapter = {
           continue;
         }
         if (type !== "event_msg" || txt(payload.type) !== "token_count") continue;
+        const limits = payload.rate_limits as Record<string, unknown> | null | undefined;
+        const p = txt(limits?.plan_type);
+        if (p) plan = p;
         const info = (payload.info ?? {}) as Record<string, unknown>;
         const cum = readCum(info.total_token_usage);
         if (!cum) continue;
@@ -137,6 +150,7 @@ export const codexAdapter: Adapter = {
           costUsd: null,
           costSource: "unknown",
           listPriceEquivalentUsd: null,
+          billing: planBilling(plan),
           estimated: true,
           partial: false,
           rawRef: `${basename(file)}:${line.start}`,
@@ -144,8 +158,8 @@ export const codexAdapter: Adapter = {
         });
       }
 
-      if (sawUsage || model !== (saved?.model ?? null)) {
-        const next: CodexState = { ...prev, model };
+      if (sawUsage || model !== (saved?.model ?? null) || plan !== (saved?.plan ?? null)) {
+        const next: CodexState = { ...prev, model, plan };
         state[stateKey] = JSON.stringify(next);
       }
     }

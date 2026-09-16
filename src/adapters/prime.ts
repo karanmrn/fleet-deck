@@ -110,6 +110,7 @@ export const primeAdapter: Adapter = {
           costUsd: costTotal,
           costSource: costTotal !== null ? "reported" : "unknown",
           listPriceEquivalentUsd: null,
+          billing: null,
           estimated: false,
           partial: false,
           rawRef: txt(o.id) ?? `${basename(file)}:${line.start}`,

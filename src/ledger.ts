@@ -10,7 +10,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
-import { buildDedupeKey, type UsageEvent } from "./types.js";
+import { buildDedupeKey, type BillingMode, type UsageEvent } from "./types.js";
 
 export function defaultDbPath(): string {
   return join(homedir(), ".fleet-deck", "ledger.db");
@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS usage_events (
   cost_usd REAL,
   cost_source TEXT NOT NULL DEFAULT 'unknown',
   list_price_equivalent_usd REAL,
+  billing TEXT,
   estimated INTEGER NOT NULL DEFAULT 0,
   partial INTEGER NOT NULL DEFAULT 0,
   dedupe_key TEXT NOT NULL UNIQUE,
@@ -134,6 +135,16 @@ export class Ledger {
     if (!cols.some((c) => c.name === "list_price_equivalent_usd")) {
       this.db.exec("ALTER TABLE usage_events ADD COLUMN list_price_equivalent_usd REAL");
     }
+    if (!cols.some((c) => c.name === "billing")) {
+      this.db.exec("ALTER TABLE usage_events ADD COLUMN billing TEXT");
+      // Rows written before billing evidence existed carry none. Forget the
+      // Codex read positions so the next scan re-reads the rollouts; the
+      // dedupe key keeps rows unique and insertEvents backfills billing.
+      this.db.exec(
+        `DELETE FROM source_state
+         WHERE key LIKE 'codex:cum:%' OR key LIKE 'offset:%/.codex/sessions/%'`,
+      );
+    }
     const current = ["v_day_model", "v_day_source"].every((view) =>
       (this.db.prepare(`PRAGMA table_info(${view})`).all() as Row[]).some(
         (c) => c.name === "list_price_equivalent_usd",
@@ -149,7 +160,8 @@ export class Ledger {
     this.db.close();
   }
 
-  /** Insert events, skipping any whose dedupe key already exists.
+  /** Insert events, skipping any whose dedupe key already exists; an
+   *  existing row only picks up billing evidence it did not have.
    *  Returns how many were actually new. */
   insertEvents(events: UsageEvent[]): number {
     if (events.length === 0) return 0;
@@ -158,18 +170,22 @@ export class Ledger {
         ts, source, provider, model, session_id, project,
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
         reasoning_tokens, cost_usd, cost_source, list_price_equivalent_usd,
-        estimated, partial, dedupe_key, file_offset
+        billing, estimated, partial, dedupe_key, file_offset
       ) VALUES (
         :ts, :source, :provider, :model, :sessionId, :project,
         :inputTokens, :outputTokens, :cacheReadTokens, :cacheWriteTokens,
         :reasoningTokens, :costUsd, :costSource, :listPriceEquivalentUsd,
-        :estimated, :partial, :dedupeKey, :fileOffset
+        :billing, :estimated, :partial, :dedupeKey, :fileOffset
       )
     `);
+    const backfill = this.db.prepare(
+      "UPDATE usage_events SET billing = ? WHERE dedupe_key = ? AND billing IS NULL",
+    );
     let inserted = 0;
     this.db.exec("BEGIN");
     try {
       for (const e of events) {
+        const dedupeKey = buildDedupeKey(e.source, e.sessionId, e.rawRef);
         const result = stmt.run({
           ts: e.ts,
           source: e.source,
@@ -185,12 +201,14 @@ export class Ledger {
           costUsd: e.costUsd,
           costSource: e.costSource,
           listPriceEquivalentUsd: e.listPriceEquivalentUsd,
+          billing: e.billing,
           estimated: e.estimated ? 1 : 0,
           partial: e.partial ? 1 : 0,
-          dedupeKey: buildDedupeKey(e.source, e.sessionId, e.rawRef),
+          dedupeKey,
           fileOffset: e.fileOffset,
         });
         inserted += Number(result.changes);
+        if (Number(result.changes) === 0 && e.billing !== null) backfill.run(e.billing, dedupeKey);
       }
       this.db.exec("COMMIT");
     } catch (err) {
@@ -355,12 +373,13 @@ export class Ledger {
       .all() as Row[];
   }
 
-  /** (provider, model) groups that carry rows priced (or left unknown) by
-   *  the price table - the candidates for re-pricing on every scan. */
-  priceableGroups(): Array<{ provider: string | null; model: string | null }> {
+  /** (provider, model, billing evidence) groups that carry rows priced (or
+   *  left unknown) by the price table - the candidates for re-pricing on
+   *  every scan. */
+  priceableGroups(): Array<{ provider: string | null; model: string | null; billing: BillingMode | null }> {
     const rows = this.db
       .prepare(
-        `SELECT DISTINCT provider, model
+        `SELECT DISTINCT provider, model, billing
          FROM usage_events
          WHERE cost_source IN ('unknown', 'price_list')`,
       )
@@ -368,12 +387,13 @@ export class Ledger {
     return rows.map((r) => ({
       provider: r.provider === null || r.provider === undefined ? null : String(r.provider),
       model: r.model === null || r.model === undefined ? null : String(r.model),
+      billing: r.billing === "usage" || r.billing === "subscription" ? r.billing : null,
     }));
   }
 
-  /** Recompute price-table cost for every row of one (provider, model)
-   *  group, per-row, from the current rates. Never touches rows whose cost
-   *  the source reported. rates=null demotes rows the table no longer
+  /** Recompute price-table cost for every row of one (provider, model,
+   *  billing evidence) group, per-row, from the current rates. Never
+   *  touches rows whose cost the source reported. rates=null demotes rows the table no longer
    *  prices back to unknown. Rows already at the current price are skipped,
    *  so the return value counts only rows whose cost actually changed. */
   repriceGroup(
@@ -381,8 +401,9 @@ export class Ledger {
     model: string | null,
     rates: { input: number; output: number; cacheRead: number; cacheWrite: number } | null,
     subscription: boolean,
+    billing: BillingMode | null = null,
   ): number {
-    const match = "WHERE (provider IS ?) AND (model IS ?)";
+    const match = "WHERE (provider IS ?) AND (model IS ?) AND (billing IS ?)";
     if (rates === null) {
       const r = this.db
         .prepare(
@@ -390,7 +411,7 @@ export class Ledger {
            SET cost_usd = NULL, list_price_equivalent_usd = NULL, cost_source = 'unknown'
            ${match} AND cost_source = 'price_list'`,
         )
-        .run(provider, model);
+        .run(provider, model, billing);
       return Number(r.changes);
     }
     const usd = (
@@ -408,7 +429,7 @@ export class Ledger {
        ${match} AND cost_source IN ('unknown', 'price_list')
        AND (cost_source = 'unknown' OR ${cleared} IS NOT NULL
             OR ${priced} IS NULL OR ABS(${priced} - ${usd}) > 1e-9)`;
-    const r = this.db.prepare(sql).run(provider, model);
+    const r = this.db.prepare(sql).run(provider, model, billing);
     return Number(r.changes);
   }
 }

@@ -19,7 +19,7 @@ function ev(partial: Partial<UsageEvent> = {}): UsageEvent {
     model: "claude-fable-5-1", sessionId: "s", project: "p",
     inputTokens: null, outputTokens: null, cacheReadTokens: null,
     cacheWriteTokens: null, reasoningTokens: null,
-    costUsd: null, costSource: "unknown", listPriceEquivalentUsd: null,
+    costUsd: null, costSource: "unknown", listPriceEquivalentUsd: null, billing: null,
     estimated: false, partial: false,
     rawRef: "x:0", fileOffset: null, ...partial,
   };
@@ -44,6 +44,8 @@ describe("prices", () => {
     expect(findPrice(table, "openai", "gpt-6-astra")?.model).toBe("gpt-6-astra");
     expect(findPrice(table, "openai", "gpt-5.6-luna")?.model).toBe("gpt-5.6-luna");
     expect(findPrice(table, "openai", "gpt-5.6-terra")?.model).toBe("gpt-5.6-terra");
+    expect(findPrice(table, "openai", "gpt-5.6-sol")?.model).toBe("gpt-5.6-sol");
+    expect(findPrice(table, "xai", "grok-4.6")?.model).toBe("grok-4.6");
     expect(findPrice(table, "openrouter", "openai/gpt-5.6-luna")?.model).toBe("openai/gpt-5.6-luna");
     expect(findPrice(table, "nebius", "moonshotai/Kimi-K3")?.model).toBe("moonshotai/Kimi-K3");
     expect(findPrice(table, "nebius", "zai-org/GLM-5.3")?.model).toBe("zai-org/GLM-5.3");
@@ -81,6 +83,24 @@ describe("prices", () => {
     expect(findPrice(table, "openai", "gpt-5.1-codex-max")?.model).toBe("gpt-5.1-codex");
   });
 
+  it("cites the pricing page of the provider that bills the row", () => {
+    expect(findPrice(table, "openai", "gpt-5.6-luna")?.source_url).toBe("https://platform.openai.com/docs/pricing");
+    expect(findPrice(table, "openrouter", "openai/gpt-5.6-luna")?.source_url).toBe("https://openrouter.ai/api/v1/models");
+  });
+
+  it("matches a log without a provider by model id alone, only when one provider prices it", () => {
+    expect(findPrice(table, null, "grok-4.6")).toMatchObject({ provider: "xai", model: "grok-4.6" });
+    const shared = {
+      ...table,
+      entries: [
+        ...table.entries,
+        { ...findPrice(table, "xai", "grok-4.6")!, provider: "openrouter" },
+      ],
+    };
+    expect(findPrice(shared, null, "grok-4.6")).toBeNull();
+    expect(findPrice(shared, "xai", "grok-4.6")?.provider).toBe("xai");
+  });
+
   it("never crosses providers and never invents a match", () => {
     expect(findPrice(table, "openai", "claude-fable-5-1")).toBeNull();
     expect(findPrice(table, "anthropic", "no-such-model")).toBeNull();
@@ -116,13 +136,35 @@ describe("prices", () => {
 });
 
 describe("billing", () => {
-  it("defaults every provider to usage in the shipped table", () => {
-    const resolved = resolveBilling(table, {});
-    for (const mode of Object.values(resolved)) expect(mode).toBe("usage");
+  it("defaults every provider to usage with no overrides and no log evidence", () => {
+    expect(resolveBilling({})).toEqual({});
+    const e = applyCost(ev({ inputTokens: 1e6, outputTokens: 1e6 }), table, resolveBilling({}));
+    expect(e.costUsd).toBeCloseTo(60, 6);
+    expect(e.listPriceEquivalentUsd).toBeNull();
+  });
+
+  it("prices usage the log proves is a subscription as list-price equivalent", () => {
+    const e = applyCost(
+      ev({ provider: "openai", model: "gpt-6-astra", inputTokens: 1e6, outputTokens: 1e6, billing: "subscription" }),
+      table,
+      resolveBilling({}),
+    );
+    expect(e.costUsd).toBeNull();
+    expect(e.listPriceEquivalentUsd).toBeCloseTo(10 + 50, 6);
+  });
+
+  it("lets the machine override win over log evidence", () => {
+    const e = applyCost(
+      ev({ provider: "openai", model: "gpt-6-astra", inputTokens: 1e6, outputTokens: 1e6, billing: "subscription" }),
+      table,
+      resolveBilling({ billing: { openai: "usage" } }),
+    );
+    expect(e.costUsd).toBeCloseTo(10 + 50, 6);
+    expect(e.listPriceEquivalentUsd).toBeNull();
   });
 
   it("prices subscription-billed providers as list-price equivalent", () => {
-    const billing = resolveBilling(table, { billing: { anthropic: "subscription" } });
+    const billing = resolveBilling({ billing: { anthropic: "subscription" } });
     const e = applyCost(ev({ inputTokens: 1e6, outputTokens: 1e6 }), table, billing);
     expect(e.costUsd).toBeNull();
     expect(e.costSource).toBe("price_list");
@@ -130,7 +172,7 @@ describe("billing", () => {
   });
 
   it("keeps usage-billed cost out of the equivalent field", () => {
-    const billing = resolveBilling(table, { billing: { anthropic: "subscription" } });
+    const billing = resolveBilling({ billing: { anthropic: "subscription" } });
     const e = applyCost(
       ev({ provider: "openai", model: "gpt-6-astra", inputTokens: 1e6, outputTokens: 1e6 }),
       table,

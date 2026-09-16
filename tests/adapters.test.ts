@@ -38,7 +38,7 @@ describe("claude_code", () => {
 
   it("gives every content-block line of one API response the same rawRef", async () => {
     const out = await claudeCodeAdapter.scan(ctx());
-    expect(out.events.map((e) => e.rawRef)).toEqual(["msg_1:req_1", "msg_1:req_1", "msg_2:req_2", "a3"]);
+    expect(out.events.map((e) => e.rawRef)).toEqual(["msg_1:req_1", "msg_1:req_1", "msg_2:req_2", "a3", "msg_syn:"]);
   });
 
   it("never opens files under a forbidden path", async () => {
@@ -117,6 +117,40 @@ describe("codex", () => {
       getState: (k: string) => first.state?.[k] ?? null,
     });
     expect(again.events.length).toBe(0);
+  });
+
+  it("marks events from a ChatGPT Pro or Plus plan as subscription billing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "fleetdeck-codex-"));
+    tmpDirs.push(dir);
+    const sessions = join(dir, ".codex", "sessions", "2026", "09", "15");
+    mkdirSync(sessions, { recursive: true });
+    const line = (ts: string, input: number, plan: string | null) =>
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: ts,
+        payload: {
+          type: "token_count",
+          info: { total_token_usage: { input_tokens: input, output_tokens: 1 } },
+          rate_limits: plan === null ? null : { limit_id: "codex", plan_type: plan },
+        },
+      }) + "\n";
+    writeFileSync(join(sessions, "rollout-pro.jsonl"),
+      line("2026-09-15T12:01:00.000Z", 100, "pro") + line("2026-09-15T12:02:00.000Z", 200, null));
+    writeFileSync(join(sessions, "rollout-plus.jsonl"), line("2026-09-15T12:03:00.000Z", 100, "plus"));
+    writeFileSync(join(sessions, "rollout-api.jsonl"), line("2026-09-15T12:04:00.000Z", 100, null));
+    const out = await codexAdapter.scan({ home: dir, getOffset: () => 0, getState: () => null });
+    const billing = Object.fromEntries(
+      out.events.map((e) => [`${e.sessionId}@${e.ts.slice(11, 16)}`, e.billing]),
+    );
+    expect(billing).toEqual({
+      "rollout-api@12:04": null,
+      "rollout-plus@12:03": "subscription",
+      "rollout-pro@12:01": "subscription",
+      // a later line with rate_limits null keeps the plan the rollout proved
+      "rollout-pro@12:02": "subscription",
+    });
+    const pro = Object.entries(out.state ?? {}).find(([k]) => k.endsWith("rollout-pro.jsonl"))!;
+    expect(JSON.parse(pro[1]).plan).toBe("pro");
   });
 
   it("counts a counter that restarts from a lower value", async () => {

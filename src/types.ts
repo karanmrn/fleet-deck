@@ -32,6 +32,10 @@ export interface UsageEvent {
   /** List-price equivalent in USD for subscription-billed providers.
    *  null for usage-billed providers and unknown models. */
   listPriceEquivalentUsd: number | null;
+  /** Billing mode the source log itself proves (e.g. a Codex rollout on a
+   *  ChatGPT Pro plan). null when the log says nothing; the machine config
+   *  override always wins over this evidence. */
+  billing: BillingMode | null;
   /** true when the source itself flags numbers as estimates (e.g. gnhf). */
   estimated: boolean;
   /** true when the source only yields model/activity, no tokens (cursor). */

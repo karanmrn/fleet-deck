@@ -25,6 +25,7 @@ function makeEvent(partial: Partial<UsageEvent> = {}): UsageEvent {
     inputTokens: 10, outputTokens: 100, cacheReadTokens: 500, cacheWriteTokens: 0,
     reasoningTokens: null, costUsd: 0.01, costSource: "price_list",
     listPriceEquivalentUsd: null,
+    billing: null,
     estimated: false, partial: false, rawRef: "uuid-1", fileOffset: 100,
     ...partial,
   };
@@ -40,6 +41,41 @@ describe("ledger", () => {
       expect(ledger.insertEvents([makeEvent(), makeEvent({ rawRef: "uuid-2" })])).toBe(0);
       expect(ledger.totals().events).toBe(2);
     } finally { ledger.close(); }
+  });
+
+  it("backfills billing evidence on a row that had none, without counting it as new", () => {
+    const { ledger } = freshLedger();
+    try {
+      expect(ledger.insertEvents([makeEvent()])).toBe(1);
+      expect(ledger.insertEvents([makeEvent({ billing: "subscription" })])).toBe(0);
+      expect(ledger.priceableGroups()).toEqual([
+        { provider: "anthropic", model: "claude-fable-5-1", billing: "subscription" },
+      ]);
+    } finally { ledger.close(); }
+  });
+
+  it("forgets Codex read positions once when it adds the billing column", () => {
+    const { ledger, path } = freshLedger();
+    ledger.setOffset("/h/.codex/sessions/2026/09/15/rollout-a.jsonl", 99);
+    ledger.setState("codex:cum:/h/.codex/sessions/2026/09/15/rollout-a.jsonl", "{}");
+    ledger.setOffset("/h/.claude/projects/p/s.jsonl", 42);
+    ledger.close();
+    const db = new DatabaseSync(path);
+    db.exec("ALTER TABLE usage_events DROP COLUMN billing");
+    db.close();
+    const upgraded = new Ledger(path);
+    try {
+      expect(upgraded.getOffset("/h/.codex/sessions/2026/09/15/rollout-a.jsonl")).toBe(0);
+      expect(upgraded.getState("codex:cum:/h/.codex/sessions/2026/09/15/rollout-a.jsonl")).toBeNull();
+      expect(upgraded.getOffset("/h/.claude/projects/p/s.jsonl")).toBe(42);
+    } finally { upgraded.close(); }
+    const steady = new Ledger(path);
+    steady.setOffset("/h/.codex/sessions/2026/09/15/rollout-a.jsonl", 7);
+    steady.close();
+    const again = new Ledger(path);
+    try {
+      expect(again.getOffset("/h/.codex/sessions/2026/09/15/rollout-a.jsonl")).toBe(7);
+    } finally { again.close(); }
   });
 
   it("remembers file offsets across instances", () => {

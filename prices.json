@@ -1,14 +1,7 @@
 {
-  "version": "2026-09-16.2",
+  "version": "2026-09-16.3",
   "captured_at": "2026-09-16",
-  "notes": "Prices in USD per 1M tokens. cache_write/cache_read default to input price when null. Refresh by editing this file and bumping version. Model ids are the exact strings the local logs carry (dashed Anthropic ids, vendor-prefixed Nebius/OpenRouter ids). billing is the per-provider default published with the table; a machine overrides it via ~/.fleet-deck/config.json (see README).",
-  "billing": {
-    "anthropic": "usage",
-    "openai": "usage",
-    "openrouter": "usage",
-    "xai": "usage",
-    "nebius": "usage"
-  },
+  "notes": "Prices in USD per 1M tokens. cache_read defaults to the input price and cache_write to the output price when null. Refresh by editing this file and bumping version. Model ids are the exact strings the local logs carry (dashed Anthropic ids, vendor-prefixed Nebius/OpenRouter ids). Rates with a long-context tier use the short-context tier. Billing mode is not part of this table: see README \"Billing mode\".",
   "entries": [
     {
       "provider": "anthropic",
@@ -100,13 +93,24 @@
     },
     {
       "provider": "openai",
+      "model": "gpt-5.6-sol",
+      "match": "exact",
+      "input_per_mtok": 4.0,
+      "output_per_mtok": 20.0,
+      "cache_read_per_mtok": 0.4,
+      "cache_write_per_mtok": 5.0,
+      "source_url": "https://platform.openai.com/docs/pricing",
+      "captured_at": "2026-09-16"
+    },
+    {
+      "provider": "openai",
       "model": "gpt-5.6-luna",
       "match": "exact",
       "input_per_mtok": 0.2,
       "output_per_mtok": 1.2,
       "cache_read_per_mtok": 0.02,
       "cache_write_per_mtok": 0.25,
-      "source_url": "https://openrouter.ai/api/v1/models",
+      "source_url": "https://platform.openai.com/docs/pricing",
       "captured_at": "2026-09-16"
     },
     {
@@ -162,6 +166,17 @@
       "cache_read_per_mtok": 0.75,
       "cache_write_per_mtok": null,
       "source_url": "https://x.ai/api",
+      "captured_at": "2026-09-16"
+    },
+    {
+      "provider": "xai",
+      "model": "grok-4.6",
+      "match": "exact",
+      "input_per_mtok": 2.0,
+      "output_per_mtok": 6.0,
+      "cache_read_per_mtok": 0.5,
+      "cache_write_per_mtok": null,
+      "source_url": "https://docs.x.ai/docs/models",
       "captured_at": "2026-09-16"
     },
     {

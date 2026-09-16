@@ -72,6 +72,7 @@ export const noMistakesAdapter: Adapter = {
           costUsd: null,
           costSource: "unknown",
           listPriceEquivalentUsd: null,
+          billing: null,
           estimated: false,
           partial: false,
           rawRef: `agent_invocations:${rid}`,

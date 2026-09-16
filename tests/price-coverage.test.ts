@@ -27,9 +27,12 @@ const ADAPTERS = [claudeCodeAdapter, primeAdapter, gnhfAdapter, codexAdapter, no
  *  together with a comment saying why the model is not priced - a new
  *  unknown id should fail the test below, not be hidden here. Sources that
  *  log no model id at all (e.g. Cursor activity rows) would land here as
- *  "cursor|unknown". Empty today: every bundled fixture id is priced. */
+ *  "cursor|unknown". */
 const KNOWN_UNPRICED: ReadonlySet<string> = new Set<string>([
-  // (none)
+  // Claude Code writes locally generated assistant messages (API errors,
+  // interrupted turns) with this model id and zero tokens. No API call is
+  // billed, so the id has no list price.
+  "anthropic|<synthetic>",
 ]);
 
 function key(provider: unknown, model: unknown): string {

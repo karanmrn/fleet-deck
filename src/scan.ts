@@ -9,6 +9,7 @@ import type { Adapter, AdapterContext, ScanOutcome, SourceStatus } from "./types
 import { Ledger, defaultDbPath } from "./ledger.js";
 import {
   applyCost,
+  billingFor,
   defaultBillingConfigPath,
   findPrice,
   loadBillingConfig,
@@ -53,7 +54,7 @@ export async function runScan(opts: {
   const table = loadPriceTable();
   const configPath = opts.billingConfigPath ?? defaultBillingConfigPath(home);
   const config = loadBillingConfig(configPath);
-  const billing = resolveBilling(table, config);
+  const billing = resolveBilling(config);
   for (const [provider, mode] of Object.entries(config.billing ?? {})) {
     log(`billing override from ${configPath}: ${provider}=${mode}`);
   }
@@ -119,12 +120,13 @@ export async function runScan(opts: {
     let repricedRows = 0;
     for (const g of ledger.priceableGroups()) {
       const entry = findPrice(table, g.provider, g.model);
-      const subscription = billing[(g.provider ?? "").toLowerCase()] === "subscription";
+      const subscription = billingFor(billing, g.provider, g.billing) === "subscription";
       repricedRows += ledger.repriceGroup(
         g.provider,
         g.model,
         entry ? ratesFor(entry) : null,
         subscription,
+        g.billing,
       );
     }
     if (repricedRows > 0) {
