@@ -1,0 +1,3 @@
+{"event":"run:start","timestamp":"2026-09-15T08:00:00.000Z"}
+{"event":"agent:run:end","timestamp":"2026-09-15T08:10:00.000Z","iteration":1,"provider":"anthropic","model":"claude-fable-5-1","inputTokens":5000,"outputTokens":500,"cacheReadTokens":0,"cacheCreationTokens":0,"estimated":true}
+{"event":"agent:run:end","timestamp":"2026-09-15T08:20:00.000Z","iteration":2,"provider":"anthropic","model":"claude-fable-5-1","inputTokens":7000,"outputTokens":700,"cacheReadTokens":0,"cacheCreationTokens":0,"estimated":true}

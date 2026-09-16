@@ -1,0 +1,4 @@
+working: bootstrap pushed to origin main (ee718ad); core build, 7 adapters, tests, docs on fm/fleet-deck-v1
+working: 28/28 tests green across 7 suites (vitest); build + lint clean locally
+needs-decision: GitHub Actions billing lock — CI run 35075729021 never started ('account is locked due to a billing issue'). Workflow YAML is valid and all gates pass locally; captain to resolve billing at github.com/settings/billing or accept local-only verification.
+done: fleet-deck v1 complete on fm/fleet-deck-v1 (7d0af3b, pushed) — node:sqlite ledger with dedupe + rollup views, 7 adapters (claude_code, prime, no-mistakes, gnhf, codex, cursor, openrouter opt-in), hard-wired redaction, prices.json v2026-09-16, JSON+TOON export, localhost dashboard (uPlot: models, tokens/day, cost/day, sessions, quota windows, electricity band), README/CONTRIBUTING/SKILL.md, 28 tests across 7 suites, npm pack verified (42.3 kB, 72 files incl. SKILL.md, skills/, prices.json, README, LICENSE)
