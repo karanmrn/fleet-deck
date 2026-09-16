@@ -1,11 +1,22 @@
 // Scan orchestrator: runs adapters, applies the cost engine, dedups into
-// the ledger, stores incremental offsets/state.
+// the ledger, stores incremental offsets/state, then re-prices existing
+// rows against the current price table so a prices.json edit or a billing
+// change takes effect on the next scan without losing history.
 
 import { homedir } from "node:os";
 
 import type { Adapter, AdapterContext, ScanOutcome, SourceStatus } from "./types.js";
 import { Ledger, defaultDbPath } from "./ledger.js";
-import { loadPriceTable, applyCost } from "./prices.js";
+import {
+  applyCost,
+  billingFor,
+  defaultBillingConfigPath,
+  findPrice,
+  loadBillingConfig,
+  loadPriceTable,
+  ratesFor,
+  resolveBilling,
+} from "./prices.js";
 
 export interface SourceReport {
   id: string;
@@ -26,11 +37,13 @@ export interface ScanReport {
   dbPath: string;
   sources: SourceReport[];
   totalInserted: number;
+  repricedRows: number;
 }
 
 export async function runScan(opts: {
   home?: string;
   dbPath?: string;
+  billingConfigPath?: string;
   adapters: Adapter[];
   logger?: (msg: string) => void;
 }): Promise<ScanReport> {
@@ -39,6 +52,12 @@ export async function runScan(opts: {
   const log = opts.logger ?? (() => {});
   const ledger = new Ledger(dbPath);
   const table = loadPriceTable();
+  const configPath = opts.billingConfigPath ?? defaultBillingConfigPath(home);
+  const config = loadBillingConfig(configPath);
+  const billing = resolveBilling(config);
+  for (const [provider, mode] of Object.entries(config.billing ?? {})) {
+    log(`billing override from ${configPath}: ${provider}=${mode}`);
+  }
   const startedAt = new Date().toISOString();
   const sources: SourceReport[] = [];
   let totalInserted = 0;
@@ -82,7 +101,7 @@ export async function runScan(opts: {
         });
         continue;
       }
-      for (const e of outcome.events) applyCost(e, table);
+      for (const e of outcome.events) applyCost(e, table, billing);
       const inserted = ledger.insertEvents(outcome.events);
       for (const [p, off] of Object.entries(outcome.offsets)) ledger.setOffset(p, off);
       for (const [k, v] of Object.entries(outcome.state ?? {})) ledger.setState(k, v);
@@ -95,15 +114,33 @@ export async function runScan(opts: {
         notes: outcome.notes,
       });
     }
+
+    // Reconcile: rows priced by an older table (or left unknown before a
+    // model was added) follow the current prices.json and billing config.
+    let repricedRows = 0;
+    for (const g of ledger.priceableGroups()) {
+      const entry = findPrice(table, g.provider, g.model);
+      const subscription = billingFor(billing, g.provider, g.billing) === "subscription";
+      repricedRows += ledger.repriceGroup(
+        g.provider,
+        g.model,
+        entry === null ? null : entry.subscription_only ? "subscription_only" : ratesFor(entry),
+        subscription,
+        g.billing,
+      );
+    }
+    if (repricedRows > 0) {
+      log(`repriced ${repricedRows} rows against prices.json v${table.version}`);
+    }
+    return {
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      dbPath,
+      sources,
+      totalInserted,
+      repricedRows,
+    };
   } finally {
     ledger.close();
   }
-
-  return {
-    startedAt,
-    finishedAt: new Date().toISOString(),
-    dbPath,
-    sources,
-    totalInserted,
-  };
 }

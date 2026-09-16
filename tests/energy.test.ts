@@ -8,8 +8,13 @@ describe("energy", () => {
     expect(classifyModel("gpt-5.1-codex")).toBe("frontier");
     expect(classifyModel("claude-haiku-4.5")).toBe("small");
     expect(classifyModel("gpt-4o-mini")).toBe("small");
-    expect(classifyModel("claude-sonnet-4.8")).toBe("mid");
+    expect(classifyModel("claude-sonnet-4-8")).toBe("mid");
     expect(classifyModel(null)).toBe("mid");
+    expect(classifyModel("gpt-6-astra")).toBe("frontier");
+    expect(classifyModel("gpt-5.6-terra")).toBe("frontier");
+    expect(classifyModel("moonshotai/Kimi-K3")).toBe("frontier");
+    expect(classifyModel("zai-org/GLM-5.3")).toBe("frontier");
+    expect(classifyModel("deepseek-ai/DeepSeek-V4-Flash-0731")).toBe("small");
   });
 
   it("estimates kWh with the documented band", () => {

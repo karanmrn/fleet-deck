@@ -56,14 +56,38 @@ fleet-deck scan
 
 This is the only adapter that makes network requests, and only when explicitly enabled.
 
+## Billing mode: usage vs subscription
+
+By default every provider in `prices.json` is billed per token (`usage`): the cost column is what you would pay at list price. If you pay a provider by **subscription** — for example an Anthropic plan that includes Claude usage — those tokens cost you nothing marginal, and showing list prices as "cost" would be misleading.
+
+fleet-deck assumes a subscription only when the log proves it: Codex CLI usage whose rollout reports a ChatGPT `pro` or `plus` plan is subscription usage. For any other provider, declare it in `~/.fleet-deck/config.json`:
+
+```json
+{
+  "billing": {
+    "anthropic": "subscription"
+  }
+}
+```
+
+Values are `"usage"` (default) or `"subscription"`. The config entry wins over the plan in the log, so `"openai": "usage"` keeps Codex usage as cost. For subscription usage:
+
+- price-table costs are computed the same way, but exported and shown as **`listPriceEquivalentUsd`** — "what these tokens would have cost at list price" — never as cost;
+- the dashboard shows them on a card labeled **"List-price equivalent"**, separate from the cost card;
+- totals keep the two apart: `costUsd` sums only usage-billed and provider-reported spend, `listPriceEquivalentUsd` sums the equivalents;
+- a `scan` re-prices existing ledger rows, so flipping a provider's mode or refreshing `prices.json` takes effect without rebuilding the ledger.
+- a model the vendor sells only inside a subscription, with no token price (for example `gpt-5.3-codex-spark`), has a `subscription_only` entry in `prices.json`: its rows carry no cost and no list-price equivalent, and show `subscription` instead of `unknown`.
+
+Remove the entry (or the file) to go back to the default for that provider.
+
 ## Dashboard
 
 `fleet-deck serve` (or just `fleet-deck`) serves a server-rendered page on `http://localhost:4173` (localhost only, nothing leaves the machine):
 
-- **Overview** — totals: tokens, cost, sessions, events, models, sources
-- **Models in use** — per-model tokens/cost/sessions, with `estimated` / `partial` / `cost?` flags
+- **Overview** — totals: tokens, cost, sessions, events, models, sources (+ a "List-price equivalent" card when a provider is billed by subscription)
+- **Models in use** — per-model tokens/cost/sessions, with `estimated` / `partial` / `cost?` / `list-price` flags (a `list-price` row shows its list-price equivalent in the cost column; a subscription-only model shows `subscription`)
 - **Tokens per day** — stacked uPlot chart by model
-- **Cost per day** — USD per day (unknown days are gaps, not zeros)
+- **Cost per day** — USD per day of usage-billed spend (unknown and subscription-only days are gaps, not zeros)
 - **Sessions per day**
 - **Provider quota windows** — live output of `quota-axi` if installed
 - **Electricity** — kWh estimate with an explicit ±5× order-of-magnitude band and method note
@@ -77,7 +101,7 @@ fleet-deck export --json   # machine-readable JSON
 fleet-deck export --toon   # compact TOON, same shape quota-axi emits
 ```
 
-Agents: see [SKILL.md](SKILL.md) for how to read the payload and its rules (unknown ≠ zero, estimated/partial flags, electricity as a range).
+Agents: see [skills/fleet-deck/SKILL.md](skills/fleet-deck/SKILL.md) for how to read the payload and its rules (unknown ≠ zero, estimated/partial flags, electricity as a range).
 
 ## Privacy
 
@@ -92,7 +116,7 @@ Agents: see [SKILL.md](SKILL.md) for how to read the payload and its rules (unkn
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Agent-facing docs: [SKILL.md](SKILL.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Agent-facing docs: [skills/fleet-deck/SKILL.md](skills/fleet-deck/SKILL.md).
 
 ## License
 

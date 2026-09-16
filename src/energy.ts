@@ -22,7 +22,7 @@ const INTENSITY_KWH_PER_MTOK: Record<ModelClass, number> = {
 
 const PUE = 1.2;
 
-const FRONTIER_RE = /opus|fable|gpt-5|grok-4|o3|405b|kimi-k2/i;
+const FRONTIER_RE = /opus|fable|gpt-5|gpt-6|grok-4|o3|405b|kimi-k2|kimi-k3|glm-5/i;
 const SMALL_RE = /haiku|mini|flash|small|8b|3b|lite/i;
 
 export function classifyModel(model: string | null): ModelClass {

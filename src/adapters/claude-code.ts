@@ -102,6 +102,8 @@ export const claudeCodeAdapter: Adapter = {
           reasoningTokens: thinking,
           costUsd: null,
           costSource: "unknown",
+          listPriceEquivalentUsd: null,
+          billing: null,
           estimated: false,
           partial: false,
           rawRef: messageId || requestId

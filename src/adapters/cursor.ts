@@ -74,6 +74,8 @@ export const cursorAdapter: Adapter = {
           reasoningTokens: null,
           costUsd: null,
           costSource: "unknown",
+          listPriceEquivalentUsd: null,
+          billing: null,
           estimated: false,
           partial: true,
           rawRef: `ai_code_hashes:${rid}`,

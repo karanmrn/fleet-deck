@@ -78,6 +78,16 @@ export function exportJson(ledger: Ledger): string {
   return JSON.stringify(buildPayload(ledger), null, 2);
 }
 
+function money2(v: unknown): number | string {
+  return v === null || v === undefined ? "unknown" : Math.round(num(v) * 100) / 100;
+}
+
+function listEquiv(v: unknown): number | string {
+  // null means "no subscription-billed usage" here, which is not unknown -
+  // show a dash instead of "unknown".
+  return v === null || v === undefined ? "-" : Math.round(num(v) * 100) / 100;
+}
+
 export function exportToon(ledger: Ledger): string {
   const payload = buildPayload(ledger);
   const t = payload.totals;
@@ -88,30 +98,39 @@ export function exportToon(ledger: Ledger): string {
       fields: [
         "events", "sessions", "models", "sources",
         "inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens",
-        "reasoningTokens", "totalTokens", "costUsd",
+        "reasoningTokens", "totalTokens", "costUsd", "listPriceEquivalentUsd",
       ],
       rows: [[
         t.events, t.sessions, t.models, t.sources,
         t.inputTokens, t.outputTokens, t.cacheReadTokens, t.cacheWriteTokens,
         t.reasoningTokens, t.totalTokens,
         t.costUsd === null ? "unknown" : Math.round(t.costUsd * 100) / 100,
+        t.listPriceEquivalentUsd === null ? "-" : Math.round(t.listPriceEquivalentUsd * 100) / 100,
       ]],
     },
     {
       name: "models",
-      fields: ["provider", "model", "events", "sessions", "totalTokens", "costUsd", "flags"],
+      fields: ["provider", "model", "events", "sessions", "totalTokens", "costUsd", "listPriceEquivalentUsd", "flags"],
       rows: payload.models.map((m) => {
         const flags: string[] = [];
         if (num(m.any_estimated) > 0) flags.push("estimated");
         if (num(m.any_partial) > 0) flags.push("partial");
         if (num(m.unknown_cost_events) > 0) flags.push("cost_unknown");
+        if (m.cost_usd === null && m.list_price_equivalent_usd !== null && m.list_price_equivalent_usd !== undefined) {
+          flags.push("list_price");
+        }
+        // a model sold only inside a subscription has no price, which is not unknown
+        const subscriptionOnly = m.cost_usd === null && (m.list_price_equivalent_usd ?? null) === null &&
+          num(m.unknown_cost_events) === 0 && num(m.subscription_only_events) > 0;
+        if (subscriptionOnly) flags.push("subscription_only");
         return [
           m.provider ?? "unknown",
           m.model ?? "unknown",
           num(m.events),
           num(m.sessions),
           rowTokens(m),
-          m.cost_usd === null ? "unknown" : Math.round(num(m.cost_usd) * 100) / 100,
+          subscriptionOnly ? "subscription" : money2(m.cost_usd),
+          listEquiv(m.list_price_equivalent_usd),
           flags.join("+") || "-",
         ];
       }),
@@ -146,7 +165,7 @@ export function exportToon(ledger: Ledger): string {
     {
       name: "note",
       fields: [],
-      rows: [[`band x${5} both ways; cost "unknown" is never zero; estimated/partial flags come from the source`]],
+      rows: [[`band x${5} both ways; cost "unknown" is never zero; estimated/partial flags come from the source; listPriceEquivalentUsd is the list-price equivalent for subscription-billed providers, not money spent`]],
     },
   ];
 

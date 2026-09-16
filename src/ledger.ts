@@ -10,7 +10,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
-import { buildDedupeKey, type UsageEvent } from "./types.js";
+import { buildDedupeKey, type BillingMode, type UsageEvent } from "./types.js";
 
 export function defaultDbPath(): string {
   return join(homedir(), ".fleet-deck", "ledger.db");
@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS usage_events (
   reasoning_tokens INTEGER,
   cost_usd REAL,
   cost_source TEXT NOT NULL DEFAULT 'unknown',
+  list_price_equivalent_usd REAL,
+  billing TEXT,
   estimated INTEGER NOT NULL DEFAULT 0,
   partial INTEGER NOT NULL DEFAULT 0,
   dedupe_key TEXT NOT NULL UNIQUE,
@@ -46,8 +48,10 @@ CREATE TABLE IF NOT EXISTS source_state (
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+`;
 
-CREATE VIEW IF NOT EXISTS v_day_model AS
+const VIEWS = `
+CREATE VIEW v_day_model AS
 SELECT date(ts) AS day,
        COALESCE(provider, 'unknown') AS provider,
        COALESCE(model, 'unknown') AS model,
@@ -60,12 +64,13 @@ SELECT date(ts) AS day,
        SUM(cache_write_tokens) AS cache_write_tokens,
        SUM(reasoning_tokens) AS reasoning_tokens,
        SUM(cost_usd) AS cost_usd,
+       SUM(list_price_equivalent_usd) AS list_price_equivalent_usd,
        MAX(estimated) AS any_estimated,
        MAX(partial) AS any_partial
 FROM usage_events
 GROUP BY day, provider, model, source;
 
-CREATE VIEW IF NOT EXISTS v_day_source AS
+CREATE VIEW v_day_source AS
 SELECT date(ts) AS day,
        source,
        COUNT(*) AS events,
@@ -75,7 +80,8 @@ SELECT date(ts) AS day,
        SUM(cache_read_tokens) AS cache_read_tokens,
        SUM(cache_write_tokens) AS cache_write_tokens,
        SUM(reasoning_tokens) AS reasoning_tokens,
-       SUM(cost_usd) AS cost_usd
+       SUM(cost_usd) AS cost_usd,
+       SUM(list_price_equivalent_usd) AS list_price_equivalent_usd
 FROM usage_events
 GROUP BY day, source;
 `;
@@ -93,6 +99,9 @@ export interface Totals {
   reasoningTokens: number;
   totalTokens: number;
   costUsd: number | null; // null = nothing priced yet
+  /** Sum of list-price equivalents (subscription-billed providers only).
+   *  null = no subscription-billed model has a price. Never mixed into costUsd. */
+  listPriceEquivalentUsd: number | null;
   estimatedEvents: number;
   partialEvents: number;
 }
@@ -116,13 +125,43 @@ export class Ledger {
     }
     this.db = new DatabaseSync(dbPath);
     this.db.exec(SCHEMA);
+    this.migrate();
+  }
+
+  /** Upgrade ledgers written by older versions: add new columns, rebuild
+   *  views only when stale, so a plain open takes no schema write lock. */
+  private migrate(): void {
+    const cols = this.db.prepare("PRAGMA table_info(usage_events)").all() as Row[];
+    if (!cols.some((c) => c.name === "list_price_equivalent_usd")) {
+      this.db.exec("ALTER TABLE usage_events ADD COLUMN list_price_equivalent_usd REAL");
+    }
+    if (!cols.some((c) => c.name === "billing")) {
+      this.db.exec("ALTER TABLE usage_events ADD COLUMN billing TEXT");
+      // Rows written before billing evidence existed carry none. Forget the
+      // Codex read positions so the next scan re-reads the rollouts; the
+      // dedupe key keeps rows unique and insertEvents backfills billing.
+      this.db.exec(
+        `DELETE FROM source_state
+         WHERE key LIKE 'codex:cum:%' OR key LIKE 'offset:%/.codex/sessions/%'`,
+      );
+    }
+    const current = ["v_day_model", "v_day_source"].every((view) =>
+      (this.db.prepare(`PRAGMA table_info(${view})`).all() as Row[]).some(
+        (c) => c.name === "list_price_equivalent_usd",
+      ),
+    );
+    if (current) return;
+    this.db.exec("DROP VIEW IF EXISTS v_day_model");
+    this.db.exec("DROP VIEW IF EXISTS v_day_source");
+    this.db.exec(VIEWS);
   }
 
   close(): void {
     this.db.close();
   }
 
-  /** Insert events, skipping any whose dedupe key already exists.
+  /** Insert events, skipping any whose dedupe key already exists; an
+   *  existing row only picks up billing evidence it did not have.
    *  Returns how many were actually new. */
   insertEvents(events: UsageEvent[]): number {
     if (events.length === 0) return 0;
@@ -130,19 +169,23 @@ export class Ledger {
       INSERT OR IGNORE INTO usage_events (
         ts, source, provider, model, session_id, project,
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-        reasoning_tokens, cost_usd, cost_source, estimated, partial,
-        dedupe_key, file_offset
+        reasoning_tokens, cost_usd, cost_source, list_price_equivalent_usd,
+        billing, estimated, partial, dedupe_key, file_offset
       ) VALUES (
         :ts, :source, :provider, :model, :sessionId, :project,
         :inputTokens, :outputTokens, :cacheReadTokens, :cacheWriteTokens,
-        :reasoningTokens, :costUsd, :costSource, :estimated, :partial,
-        :dedupeKey, :fileOffset
+        :reasoningTokens, :costUsd, :costSource, :listPriceEquivalentUsd,
+        :billing, :estimated, :partial, :dedupeKey, :fileOffset
       )
     `);
+    const backfill = this.db.prepare(
+      "UPDATE usage_events SET billing = ? WHERE dedupe_key = ? AND billing IS NULL",
+    );
     let inserted = 0;
     this.db.exec("BEGIN");
     try {
       for (const e of events) {
+        const dedupeKey = buildDedupeKey(e.source, e.sessionId, e.rawRef);
         const result = stmt.run({
           ts: e.ts,
           source: e.source,
@@ -157,12 +200,15 @@ export class Ledger {
           reasoningTokens: e.reasoningTokens,
           costUsd: e.costUsd,
           costSource: e.costSource,
+          listPriceEquivalentUsd: e.listPriceEquivalentUsd,
+          billing: e.billing,
           estimated: e.estimated ? 1 : 0,
           partial: e.partial ? 1 : 0,
-          dedupeKey: buildDedupeKey(e.source, e.sessionId, e.rawRef),
+          dedupeKey,
           fileOffset: e.fileOffset,
         });
         inserted += Number(result.changes);
+        if (Number(result.changes) === 0 && e.billing !== null) backfill.run(e.billing, dedupeKey);
       }
       this.db.exec("COMMIT");
     } catch (err) {
@@ -214,6 +260,7 @@ export class Ledger {
                 SUM(cache_write_tokens) AS cache_write_tokens,
                 SUM(reasoning_tokens) AS reasoning_tokens,
                 SUM(cost_usd) AS cost_usd,
+                SUM(list_price_equivalent_usd) AS list_price_equivalent_usd,
                 SUM(estimated) AS estimated_events,
                 SUM(partial) AS partial_events
          FROM usage_events`,
@@ -237,6 +284,7 @@ export class Ledger {
       reasoningTokens: reasoning,
       totalTokens: input + output + cacheRead + cacheWrite + reasoning,
       costUsd: nOrNull(row.cost_usd),
+      listPriceEquivalentUsd: nOrNull(row.list_price_equivalent_usd),
       estimatedEvents: n(row.estimated_events),
       partialEvents: n(row.partial_events),
     };
@@ -264,7 +312,8 @@ export class Ledger {
                 SUM(cache_read_tokens) AS cache_read_tokens,
                 SUM(cache_write_tokens) AS cache_write_tokens,
                 SUM(reasoning_tokens) AS reasoning_tokens,
-                SUM(cost_usd) AS cost_usd
+                SUM(cost_usd) AS cost_usd,
+                SUM(list_price_equivalent_usd) AS list_price_equivalent_usd
          FROM v_day_source
          WHERE day >= date('now', ?)
          GROUP BY day
@@ -286,7 +335,11 @@ export class Ledger {
                 SUM(cache_write_tokens) AS cache_write_tokens,
                 SUM(reasoning_tokens) AS reasoning_tokens,
                 SUM(cost_usd) AS cost_usd,
-                SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END) AS unknown_cost_events,
+                SUM(list_price_equivalent_usd) AS list_price_equivalent_usd,
+                SUM(CASE WHEN cost_usd IS NULL AND list_price_equivalent_usd IS NULL
+                          AND cost_source <> 'subscription'
+                         THEN 1 ELSE 0 END) AS unknown_cost_events,
+                SUM(CASE WHEN cost_source = 'subscription' THEN 1 ELSE 0 END) AS subscription_only_events,
                 MAX(estimated) AS any_estimated,
                 MAX(partial) AS any_partial
          FROM usage_events
@@ -310,6 +363,7 @@ export class Ledger {
                 SUM(cache_write_tokens) AS cache_write_tokens,
                 SUM(reasoning_tokens) AS reasoning_tokens,
                 SUM(cost_usd) AS cost_usd,
+                SUM(list_price_equivalent_usd) AS list_price_equivalent_usd,
                 MAX(estimated) AS any_estimated,
                 MAX(partial) AS any_partial,
                 MIN(ts) AS first_ts,
@@ -319,5 +373,69 @@ export class Ledger {
          ORDER BY events DESC`,
       )
       .all() as Row[];
+  }
+
+  /** (provider, model, billing evidence) groups that carry rows priced (or
+   *  left unknown) by the price table - the candidates for re-pricing on
+   *  every scan. */
+  priceableGroups(): Array<{ provider: string | null; model: string | null; billing: BillingMode | null }> {
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT provider, model, billing
+         FROM usage_events
+         WHERE cost_source IN ('unknown', 'price_list', 'subscription')`,
+      )
+      .all() as Row[];
+    return rows.map((r) => ({
+      provider: r.provider === null || r.provider === undefined ? null : String(r.provider),
+      model: r.model === null || r.model === undefined ? null : String(r.model),
+      billing: r.billing === "usage" || r.billing === "subscription" ? r.billing : null,
+    }));
+  }
+
+  /** Recompute price-table cost for every row of one (provider, model,
+   *  billing evidence) group, per-row, from the current rates. Never
+   *  touches rows whose cost the source reported. rates=null demotes rows the table no longer
+   *  prices back to unknown; "subscription_only" marks rows of a model sold
+   *  only inside a subscription. Rows already at the current price are skipped,
+   *  so the return value counts only rows whose cost actually changed. */
+  repriceGroup(
+    provider: string | null,
+    model: string | null,
+    rates: { input: number; output: number; cacheRead: number; cacheWrite: number } | "subscription_only" | null,
+    subscription: boolean,
+    billing: BillingMode | null = null,
+  ): number {
+    const match = "WHERE (provider IS ?) AND (model IS ?) AND (billing IS ?)";
+    if (rates === null || rates === "subscription_only") {
+      const [target, from] = rates === null
+        ? ["unknown", "('price_list', 'subscription')"]
+        : ["subscription", "('unknown', 'price_list')"];
+      const r = this.db
+        .prepare(
+          `UPDATE usage_events
+           SET cost_usd = NULL, list_price_equivalent_usd = NULL, cost_source = '${target}'
+           ${match} AND cost_source IN ${from}`,
+        )
+        .run(provider, model, billing);
+      return Number(r.changes);
+    }
+    const usd = (
+      `ROUND((COALESCE(input_tokens, 0) * ${rates.input}` +
+      ` + COALESCE(output_tokens, 0) * ${rates.output}` +
+      ` + COALESCE(cache_read_tokens, 0) * ${rates.cacheRead}` +
+      ` + COALESCE(cache_write_tokens, 0) * ${rates.cacheWrite}` +
+      ` + COALESCE(reasoning_tokens, 0) * ${rates.output}) / 1000000.0, 8)`
+    );
+    const [priced, cleared] = subscription
+      ? ["list_price_equivalent_usd", "cost_usd"]
+      : ["cost_usd", "list_price_equivalent_usd"];
+    const sql =
+      `UPDATE usage_events SET ${priced} = ${usd}, ${cleared} = NULL, cost_source = 'price_list'
+       ${match} AND cost_source IN ('unknown', 'price_list', 'subscription')
+       AND (cost_source <> 'price_list' OR ${cleared} IS NOT NULL
+            OR ${priced} IS NULL OR ABS(${priced} - ${usd}) > 1e-9)`;
+    const r = this.db.prepare(sql).run(provider, model, billing);
+    return Number(r.changes);
   }
 }

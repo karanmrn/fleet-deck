@@ -109,6 +109,8 @@ export const primeAdapter: Adapter = {
           reasoningTokens: null,
           costUsd: costTotal,
           costSource: costTotal !== null ? "reported" : "unknown",
+          listPriceEquivalentUsd: null,
+          billing: null,
           estimated: false,
           partial: false,
           rawRef: txt(o.id) ?? `${basename(file)}:${line.start}`,
