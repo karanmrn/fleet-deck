@@ -2,11 +2,14 @@
 
 This workflow adapts Michael Shimeles's Rasmic methodology to Fleet Deck.
 It does not override the rules in [AGENTS.md](../../AGENTS.md).
+In an active pipeline, perform only your assigned phase. The outer executor owns
+the remaining phases and pipeline control.
 
 ## The four beats
 
 1. **Isolate with `/new-feature`.** Start in a fresh worktree and task branch from
-   `origin/main`. Verify that the current directory is your worktree before edits.
+   `origin/main`. Use the assigned worktree when the task coordinator has already
+   created it. Verify that the current directory is your worktree before edits.
 2. **Build with `/code-structure`.** Keep orchestration in `src/cli.ts` and
    `src/scan.ts`. Put reusable logic in the module that owns it. Use explicit inputs
    and structured returns from `src/types.ts`. See the repository map below.
@@ -19,12 +22,12 @@ It does not override the rules in [AGENTS.md](../../AGENTS.md).
 
 ## Repository map and checks
 
-- `package.json` defines the commands and requires Node.js >= 22.13.0.
-  Run `npm run build`, `npm run lint` and `npm test`.
-  [CONTRIBUTING.md](../../CONTRIBUTING.md) owns the development setup, privacy
-  rules and adapter checklist. The CLI smoke run is in the root
-  [Price table and billing](../../AGENTS.md#price-table-and-billing) section.
-  Also check `node dist/cli.js doctor` and `node dist/cli.js export --toon`.
+- Follow [Development setup](../../CONTRIBUTING.md#dev-setup) for the required
+  repository checks. `package.json` defines the commands and Node.js requirement.
+  [CONTRIBUTING.md](../../CONTRIBUTING.md) also owns the privacy rules and adapter
+  checklist. For CLI smoke checks, use `node dist/cli.js scan`,
+  `node dist/cli.js export --json`, `node dist/cli.js export --toon` and
+  `node dist/cli.js doctor` with the isolated setup below.
 - `src/ledger.ts` owns the `node:sqlite` ledger at `~/.fleet-deck/ledger.db`.
   Use a task-owned database with `--db PATH` for experiments. Set `HOME` to a
   disposable copy of `tests/fixtures/home/` for smoke scans. Keep OpenRouter off
