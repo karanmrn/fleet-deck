@@ -17,3 +17,9 @@ When updating this file, preserve this bar for all agents and keep entries conci
 - Billing mode resolves as: machine override in `~/.fleet-deck/config.json`, then log evidence on the event (`UsageEvent.billing`, e.g. a Codex ChatGPT plan), then `usage`. `prices.json` holds prices only; a model with no first-party token price is either `subscription_only` (with a `note`) or stays unknown - never a third-party rate. Subscription-billed costs are exported as `listPriceEquivalentUsd`, never `costUsd`. User docs: README "Billing mode".
 - A `scan` re-prices existing ledger rows (`cost_source` `unknown`/`price_list`/`subscription`) against the current table, so price edits and billing flips need no ledger rebuild; reported costs are never touched.
 - Commands: `npm test`, `npm run build`, `node dist/cli.js scan && node dist/cli.js export --json`.
+
+## Build methodology
+
+Use the four beats: isolate, build, prove and ship. Follow
+[Build methodology](docs/agents/build-methodology.md) for the workflow, repository
+checks, multi-agent rules and task completion list. Existing rules above still apply.
