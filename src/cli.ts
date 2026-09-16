@@ -43,7 +43,8 @@ switch (cmd) {
     process.stdout.write(HELP);
     break;
   default:
-    console.error(`Unknown command: ${cmd}\n`);
+    console.error(`Unknown command: ${cmd}
+`);
     process.stdout.write(HELP);
     process.exitCode = 1;
 }
