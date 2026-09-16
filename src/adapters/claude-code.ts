@@ -1,6 +1,10 @@
 // Claude Code adapter: ~/.claude/projects/<project-slug>/*.jsonl
 // Assistant entries carry message.model and message.usage. Cache tokens
-// dominate - stored in their own columns, never folded into input.// No logged cost - the price table fills it.
+// dominate - stored in their own columns, never folded into input.
+// Thinking tokens are part of output_tokens and are split out.
+// One API response is logged as one line per content block, all with the
+// same message.id, requestId and usage, so rawRef uses those ids.
+// No logged cost - the price table fills it.
 
 import { existsSync, readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";

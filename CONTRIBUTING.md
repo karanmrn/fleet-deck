@@ -23,7 +23,7 @@ Requires Node.js >= 22.13 (uses `node:sqlite` unflagged).
 
 ## Adding a new source adapter
 
-1. Copy an existing adapter in `src/adapters/` (e.g. `jsonl.ts` for a JSONL log).
+1. Copy an existing adapter in `src/adapters/` (e.g. `prime.ts`, which reads a JSONL log with the shared `jsonl.ts` reader).
 2. Implement the `Adapter` interface from `src/types.ts`: `detect(home)` and `scan(ctx)`.
 3. Store a stable `rawRef` per event (uuid / rowid / `file:offset`) so re-scans dedupe.
 4. Register the adapter in `src/adapters/index.ts`.

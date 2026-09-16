@@ -170,6 +170,7 @@ export function startServer(opts: ServeOptions = {}): Promise<number> {
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       try {
+        // Reject other Host headers to block DNS rebinding from web pages.
         const { port: boundPort } = server.address() as AddressInfo;
         if (req.headers.host !== `localhost:${boundPort}` && req.headers.host !== `127.0.0.1:${boundPort}`) {
           res.writeHead(403, { "Content-Type": "text/plain" });

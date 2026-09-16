@@ -14,6 +14,8 @@ export interface UsageEvent {
   sessionId: string | null;
   /** Project folder name only - never a full path. */
   project: string | null;
+  /** The five token columns must not overlap: when a source counts cached or
+   *  reasoning tokens inside input or output, the adapter subtracts them. */
   inputTokens: number | null;
   outputTokens: number | null;
   cacheReadTokens: number | null;
@@ -26,7 +28,8 @@ export interface UsageEvent {
   estimated: boolean;
   /** true when the source only yields model/activity, no tokens (cursor). */
   partial: boolean;
-  /** Stable locator inside the source (uuid, rowid, path:offset) - never content. */
+  /** Stable locator inside the source (uuid, rowid, path:offset) - never content.
+   *  One rawRef per billed call, so repeated log lines of one call dedupe. */
   rawRef: string;
   /** Byte offset in the source file right after this event, when file-based. */
   fileOffset: number | null;
